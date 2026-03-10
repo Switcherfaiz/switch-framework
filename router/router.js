@@ -86,31 +86,48 @@ export class Router {
 
   findRoute(routeName, params = {}) {
     const normalized = routeName.startsWith('/') ? routeName.substring(1) : routeName;
+    
+    // First check for exact static match
     if (this.routes[normalized]) {
       return { ...this.routes[normalized], render: () => this.routes[normalized].render(params) };
     }
 
-    return Object.entries(this.routes).reduce((matchedRoute, [routePattern, route]) => {
-      if (matchedRoute) return matchedRoute;
-      if (!routePattern.includes(':')) return null;
+    // Then check for dynamic routes, but prioritize more specific patterns
+    const dynamicRoutes = Object.entries(this.routes).filter(([pattern]) => pattern.includes(':'));
+    
+    // Sort by specificity - fewer dynamic segments = more specific
+    dynamicRoutes.sort(([, routeA], [, routeB]) => {
+      const aDynamicCount = (routeA.path || '').split(':').length - 1;
+      const bDynamicCount = (routeB.path || '').split(':').length - 1;
+      return aDynamicCount - bDynamicCount;
+    });
 
+    for (const [routePattern, route] of dynamicRoutes) {
       const patternSegments = routePattern.split('/');
       const routeSegments = normalized.split('/');
-      if (patternSegments.length !== routeSegments.length) return null;
+      if (patternSegments.length !== routeSegments.length) continue;
 
-      const dynamicParams = patternSegments.reduce((acc, segment, idx) => {
-        if (segment.startsWith(':')) {
-          acc[segment.slice(1)] = routeSegments[idx];
-        } else if (segment !== routeSegments[idx]) {
-          acc.isMatch = false;
+      const dynamicParams = {};
+      let isMatch = true;
+
+      for (let i = 0; i < patternSegments.length; i++) {
+        const patternSegment = patternSegments[i];
+        const routeSegment = routeSegments[i];
+        
+        if (patternSegment.startsWith(':')) {
+          dynamicParams[patternSegment.slice(1)] = routeSegment;
+        } else if (patternSegment !== routeSegment) {
+          isMatch = false;
+          break;
         }
-        return acc;
-      }, {});
+      }
 
-      if (dynamicParams.isMatch === false) return null;
-      delete dynamicParams.isMatch;
-      return { ...route, render: () => route.render({ ...params, ...dynamicParams }) };
-    }, null);
+      if (isMatch) {
+        return { ...route, render: () => route.render({ ...params, ...dynamicParams }) };
+      }
+    }
+
+    return null;
   }
 
   buildPath(route, params) {
