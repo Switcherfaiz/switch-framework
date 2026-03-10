@@ -79,7 +79,9 @@ export class TwAppInitial extends HTMLElement {
     };
 
     const routes = layoutResult?.routes || this.layout?.routes || buildRoutesFromScreens(layoutResult?.screens || this.layout?.screens) || {};
-    const initialRoute = layoutResult?.initialRoute || this.layout?.initialRoute || 'home';
+    const routeKeys = Object.keys(routes);
+    const initialRoute = layoutResult?.initialRoute || this.layout?.initialRoute || (routeKeys.length ? routeKeys[0] : null);
+    const titlePrefix = layoutResult?.titlePrefix ?? this.layout?.titlePrefix ?? this.layout?.appName ?? '';
 
     if (!this._preventAutoHideSplash && !this._splashRemoved) {
       this.removeSplashscreen();
@@ -98,7 +100,18 @@ export class TwAppInitial extends HTMLElement {
       appContainer,
       (routeInfo) => {
         const layoutType = routeInfo?.route?.layout || 'stack';
-        this.globalStates.setState({ activePath: routeInfo.fullPath, activeRoute: routeInfo.normalizedRoute, activeLayout: layoutType });
+        const params = routeInfo?.params || {};
+        const routeParams = Object.fromEntries(
+          Object.entries(params).filter(([k]) => !k.startsWith('_') && !k.startsWith('__'))
+        );
+        const searchParams = Object.fromEntries(new URLSearchParams(window.location.search || ''));
+        this.globalStates.setState({
+          activePath: routeInfo.fullPath,
+          activeRoute: routeInfo.normalizedRoute,
+          activeLayout: layoutType,
+          routeParams,
+          searchParams
+        });
         document.dispatchEvent(new CustomEvent('router:change', { bubbles: true, detail: routeInfo }));
 
         const currentShell = this.shadowRoot.querySelector('sw-app-shell');
@@ -109,12 +122,13 @@ export class TwAppInitial extends HTMLElement {
         }
 
         return currentShell?.getStackContainer ? currentShell.getStackContainer() : null;
-      }
+      },
+      { defaultRoute: initialRoute, titlePrefix }
     );
 
     api.router = this.router;
 
-    this.globalStates.setState({ navigate: this.router.navigate, redirect: this.router.redirect, replace: this.router.replace, go_back: this.router.go_back });
+    this.globalStates.setState({ navigate: this.router.navigate, redirect: this.router.redirect, replace: this.router.replace, go_back: this.router.go_back, defaultRoute: initialRoute });
 
     document.addEventListener('router:back', () => this.router?.go_back());
 

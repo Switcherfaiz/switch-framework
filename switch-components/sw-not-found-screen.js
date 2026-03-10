@@ -5,7 +5,7 @@ export class TwNotFoundScreen extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ['path'];
+    return ['path', 'fallback-route'];
   }
 
   attributeChangedCallback() {
@@ -18,6 +18,7 @@ export class TwNotFoundScreen extends HTMLElement {
 
   render() {
     const path = this.getAttribute('path') || window.location.pathname || '';
+    const fallbackRoute = this.getAttribute('fallback-route') || (globalStates?.getState ? globalStates.getState('defaultRoute') : null) || null;
 
     this.shadowRoot.innerHTML = `
       ${this.styleSheet()}
@@ -29,7 +30,7 @@ export class TwNotFoundScreen extends HTMLElement {
           <div class="path">${path}</div>
 
           <div class="row">
-            <button class="btn" id="home">Go to Home</button>
+            <button class="btn" id="home" ${!fallbackRoute ? 'style="display:none"' : ''}>Go to start</button>
             <button class="btn secondary" id="back">Go Back</button>
           </div>
         </div>
@@ -37,8 +38,9 @@ export class TwNotFoundScreen extends HTMLElement {
     `;
 
     this.shadowRoot.getElementById('home')?.addEventListener('click', () => {
+      if (!fallbackRoute) return;
       const navigate = globalStates?.getState ? globalStates.getState('navigate') : null;
-      if (typeof navigate === 'function') navigate('home');
+      if (typeof navigate === 'function') navigate(fallbackRoute);
     });
 
     this.shadowRoot.getElementById('back')?.addEventListener('click', () => {

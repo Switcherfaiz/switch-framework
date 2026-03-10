@@ -1,9 +1,11 @@
 export class Router {
-  constructor(routes = {}, updateTitleCallback = null, containerEl = null, onRouteChange = null) {
+  constructor(routes = {}, updateTitleCallback = null, containerEl = null, onRouteChange = null, options = {}) {
     this.routes = routes;
     this.updateTitleCallback = updateTitleCallback;
     this.containerEl = containerEl;
     this.onRouteChange = onRouteChange;
+    this.defaultRoute = options.defaultRoute ?? null;
+    this.titlePrefix = options.titlePrefix ?? '';
     this.navigate = this.navigate.bind(this);
     this.redirect = this.redirect.bind(this);
     this.replace = this.replace.bind(this);
@@ -53,21 +55,29 @@ export class Router {
     const containerFromCallback = typeof this.onRouteChange === 'function' ? this.onRouteChange(routeInfo) : null;
     const container = containerFromCallback || this.containerEl;
     const safePath = this.escapeHtml(missingPath);
-    if (container) container.innerHTML = `<sw-not-found-screen path="${safePath}"></sw-not-found-screen>`;
-    document.title = 'Framework Test - Not Found';
+    const fallbackRoute = this.defaultRoute ? ` fallback-route="${this.escapeHtml(this.defaultRoute)}"` : '';
+    if (container) container.innerHTML = `<sw-not-found-screen path="${safePath}"${fallbackRoute}></sw-not-found-screen>`;
+    document.title = this.titlePrefix ? `${this.titlePrefix} - Not Found` : 'Not Found';
     return routeInfo;
   }
 
-  start(initialRoute = 'home') {
+  start(initialRoute) {
     const fullPath = window.location.pathname || '/';
     const routingPath = fullPath.startsWith('/') ? fullPath.substring(1) : fullPath;
     if (routingPath) {
       const info = this.renderScreen(routingPath, {});
       if (!info) return this.renderNotFound(routingPath, {});
+
+      if (info.fullPath && info.fullPath !== fullPath) {
+        history.replaceState({ route: info.normalizedRoute, params: info.params }, '', info.fullPath);
+      }
+
       return info;
     }
 
-    return this.navigate(initialRoute);
+    const targetRoute = initialRoute ?? this.defaultRoute;
+    if (targetRoute) return this.navigate(targetRoute);
+    return this.renderNotFound('', {});
   }
 
   extractParamsFromRoute(normalized, route) {
@@ -127,6 +137,18 @@ export class Router {
       }
     }
 
+    // Fallback: try matching a parent prefix route (e.g. "docs/router" -> "docs")
+    const segments = normalized.split('/');
+    if (segments.length > 1) {
+      for (let i = segments.length - 1; i >= 1; i--) {
+        const prefix = segments.slice(0, i).join('/');
+        if (this.routes[prefix]) {
+          const subPath = segments.slice(i).join('/');
+          return { ...this.routes[prefix], _matchedKey: prefix, render: () => this.routes[prefix].render({ ...params, _subPath: subPath }) };
+        }
+      }
+    }
+
     return null;
   }
 
@@ -163,15 +185,17 @@ export class Router {
     const route = this.findRoute(normalized, params);
     if (!route) return null;
 
+    const resolvedKey = route._matchedKey || normalized;
     const fullPath = this.buildPath(route, params);
-    const routeInfo = { normalizedRoute: normalized, route, fullPath, params };
+    const routeInfo = { normalizedRoute: resolvedKey, route, fullPath, params };
     const containerFromCallback = typeof this.onRouteChange === 'function' ? this.onRouteChange(routeInfo) : null;
     const container = containerFromCallback || this.containerEl;
     const screenContent = typeof route.render === 'function' ? route.render(params) : route.render;
 
     if (this.updateTitleCallback) this.updateTitleCallback(normalized);
     if (container) container.innerHTML = screenContent;
-    document.title = route.title ? `Framework Test - ${route.title}` : 'Framework Test';
+    const baseTitle = route.title || '';
+    document.title = this.titlePrefix ? (baseTitle ? `${this.titlePrefix} - ${baseTitle}` : this.titlePrefix) : baseTitle;
 
     return routeInfo;
   }
@@ -242,7 +266,9 @@ export class Router {
       if (!info) return this.renderNotFound(routingPath, {});
       return info;
     }
-    return this.navigate('home', {});
+    const targetRoute = this.defaultRoute;
+    if (targetRoute) return this.navigate(targetRoute, {});
+    return this.renderNotFound('', {});
   }
 
   go_back() {
