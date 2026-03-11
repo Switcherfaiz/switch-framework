@@ -105,12 +105,20 @@ export class TwAppInitial extends HTMLElement {
           Object.entries(params).filter(([k]) => !k.startsWith('_') && !k.startsWith('__'))
         );
         const searchParams = Object.fromEntries(new URLSearchParams(window.location.search || ''));
+        const historyEntry = { path: routeInfo.fullPath, route: routeInfo.normalizedRoute, params: routeParams, title: routeInfo.route?.title };
+        const prevHistory = this.globalStates.getState('activeRoutesHistory') || [];
+        const existingIdx = prevHistory.findIndex((e) => e.route === routeInfo.normalizedRoute);
+        const newHistory = existingIdx >= 0
+          ? prevHistory.slice(0, existingIdx + 1)
+          : [...prevHistory, historyEntry];
+
         this.globalStates.setState({
           activePath: routeInfo.fullPath,
           activeRoute: routeInfo.normalizedRoute,
           activeLayout: layoutType,
           routeParams,
-          searchParams
+          searchParams,
+          activeRoutesHistory: newHistory
         });
         document.dispatchEvent(new CustomEvent('router:change', { bubbles: true, detail: routeInfo }));
 
@@ -128,7 +136,17 @@ export class TwAppInitial extends HTMLElement {
 
     api.router = this.router;
 
-    this.globalStates.setState({ navigate: this.router.navigate, redirect: this.router.redirect, replace: this.router.replace, go_back: this.router.go_back, defaultRoute: initialRoute });
+    const definedRoutes = Object.entries(this.router.routes || {})
+      .filter(([k]) => !k.startsWith('+'))
+      .map(([key, r]) => ({ path: r.path || '/' + key, route: key, title: r.title }));
+    this.globalStates.setState({
+      navigate: this.router.navigate,
+      redirect: this.router.redirect,
+      replace: this.router.replace,
+      go_back: this.router.go_back,
+      defaultRoute: initialRoute,
+      definedRoutes
+    });
 
     document.addEventListener('router:back', () => this.router?.go_back());
 

@@ -8,7 +8,9 @@
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
-    "./index.js": "./index.js"
+    "./index.js": "./index.js",
+    "./router": "./router/index.js",
+    "./themes": "./themes/index.js"
   },
   "files": [
     "**/*.js",

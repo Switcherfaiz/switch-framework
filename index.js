@@ -15,6 +15,14 @@ import {
   encodeData,
   decodeData
 } from './router/index.js';
+import {
+  createState,
+  useState,
+  updateState,
+  getState,
+  setState,
+  subscribeState
+} from './state-managers/index.js';
 
 export { startApp } from './registers/index.js';
 
@@ -28,7 +36,7 @@ export function registerFramework() {
 }
 
 export {
-  // routing helpers
+  // component/routing helpers
   Stack,
   Tabs,
   Router,
@@ -37,6 +45,13 @@ export {
   assertExpoConventions,
   encodeData,
   decodeData,
+  // state management
+  createState,
+  useState,
+  updateState,
+  getState,
+  setState,
+  subscribeState,
   // global styles
   setGlobalComponentSheet,
   getGlobalComponentSheet,

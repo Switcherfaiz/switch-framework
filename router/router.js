@@ -99,21 +99,37 @@ export class Router {
     
     // First check for exact static match
     if (this.routes[normalized]) {
-      return { ...this.routes[normalized], render: () => this.routes[normalized].render(params) };
+      const route = this.routes[normalized];
+      const pathTemplate = route.path || '';
+      // If route path has required params (:param) and normalized has fewer segments, don't match
+      // e.g. /docs with no param should not match route "docs" with path /docs/:id
+      if (pathTemplate.includes(':')) {
+        const pathSegments = pathTemplate.replace(/^\//, '').split('/');
+        const routeSegments = normalized.split('/');
+        if (routeSegments.length < pathSegments.length) {
+          // Fall through to dynamic/not-found - don't match incomplete path
+        } else {
+          return { ...route, render: () => route.render(params) };
+        }
+      } else {
+        return { ...route, render: () => route.render(params) };
+      }
     }
 
-    // Then check for dynamic routes, but prioritize more specific patterns
-    const dynamicRoutes = Object.entries(this.routes).filter(([pattern]) => pattern.includes(':'));
-    
-    // Sort by specificity - fewer dynamic segments = more specific
+    // Then check for dynamic routes - match by path template when path contains :
+    const dynamicRoutes = Object.entries(this.routes).filter(
+      ([, route]) => (route.path || '').includes(':')
+    );
+
     dynamicRoutes.sort(([, routeA], [, routeB]) => {
       const aDynamicCount = (routeA.path || '').split(':').length - 1;
       const bDynamicCount = (routeB.path || '').split(':').length - 1;
       return aDynamicCount - bDynamicCount;
     });
 
-    for (const [routePattern, route] of dynamicRoutes) {
-      const patternSegments = routePattern.split('/');
+    for (const [routeKey, route] of dynamicRoutes) {
+      const pathTemplate = route.path || '/' + routeKey;
+      const patternSegments = pathTemplate.replace(/^\//, '').split('/');
       const routeSegments = normalized.split('/');
       if (patternSegments.length !== routeSegments.length) continue;
 
@@ -123,7 +139,6 @@ export class Router {
       for (let i = 0; i < patternSegments.length; i++) {
         const patternSegment = patternSegments[i];
         const routeSegment = routeSegments[i];
-        
         if (patternSegment.startsWith(':')) {
           dynamicParams[patternSegment.slice(1)] = routeSegment;
         } else if (patternSegment !== routeSegment) {
@@ -133,7 +148,8 @@ export class Router {
       }
 
       if (isMatch) {
-        return { ...route, render: () => route.render({ ...params, ...dynamicParams }) };
+        const resolvedParams = { ...params, ...dynamicParams };
+        return { ...route, _resolvedParams: resolvedParams, _useNormalized: true, render: () => route.render(resolvedParams) };
       }
     }
 
@@ -144,7 +160,12 @@ export class Router {
         const prefix = segments.slice(0, i).join('/');
         if (this.routes[prefix]) {
           const subPath = segments.slice(i).join('/');
-          return { ...this.routes[prefix], _matchedKey: prefix, render: () => this.routes[prefix].render({ ...params, _subPath: subPath }) };
+          const r = this.routes[prefix];
+          const pathTemplate = r.path || '';
+          const paramMatch = pathTemplate.match(/:(\w+)/);
+          const nextParams = { ...params, _subPath: subPath };
+          if (paramMatch) nextParams[paramMatch[1]] = subPath;
+          return { ...r, _matchedKey: prefix, _useNormalized: true, _resolvedParams: nextParams, render: () => r.render(nextParams) };
         }
       }
     }
@@ -186,11 +207,13 @@ export class Router {
     if (!route) return null;
 
     const resolvedKey = route._matchedKey || normalized;
-    const fullPath = this.buildPath(route, params);
-    const routeInfo = { normalizedRoute: resolvedKey, route, fullPath, params };
+    const effectiveParams = route._resolvedParams || params;
+    const fullPath = this.buildPath(route, effectiveParams);
+    const normalizedRoute = route._useNormalized ? normalized : resolvedKey;
+    const routeInfo = { normalizedRoute, route, fullPath, params: effectiveParams };
     const containerFromCallback = typeof this.onRouteChange === 'function' ? this.onRouteChange(routeInfo) : null;
     const container = containerFromCallback || this.containerEl;
-    const screenContent = typeof route.render === 'function' ? route.render(params) : route.render;
+    const screenContent = typeof route.render === 'function' ? route.render(effectiveParams) : route.render;
 
     if (this.updateTitleCallback) this.updateTitleCallback(normalized);
     if (container) container.innerHTML = screenContent;
