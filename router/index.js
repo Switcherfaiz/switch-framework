@@ -58,6 +58,29 @@ export function useRouteChangesSubscriber(callback) {
   return () => {};
 }
 
+/**
+ * Subscribe to globalStates keys. When any watched key changes, the callback runs.
+ * Use in components to re-render when route/params change.
+ * @param {() => void} callback - e.g. () => component._renderToShadow()
+ * @param {string[]} deps - globalStates keys to watch, e.g. ['activeRoute', 'routeParams']
+ * @returns {() => void} unsubscribe
+ */
+export function useEffect(callback, deps = []) {
+  if (typeof globalStates === 'undefined' || !globalStates.subscribe) return () => {};
+  const prev = deps.map((k) => globalStates.getState(k));
+  const unsub = globalStates.subscribe(() => {
+    const changed = deps.some((k, i) => {
+      const cur = globalStates.getState(k);
+      const different = !Object.is(prev[i], cur);
+      prev[i] = cur;
+      return different;
+    });
+    if (changed && typeof callback === 'function') callback();
+  });
+  if (deps.length && typeof callback === 'function') callback();
+  return unsub;
+}
+
 // Navigation functions that work with globalStates
 export function navigate(route, params = {}) {
   if (typeof globalStates !== 'undefined' && globalStates.getState) {
@@ -130,7 +153,7 @@ export function previousRoute(prefix = '', orderedIds = []) {
     if (idx <= 0) return null;
     const prevId = orderedIds[idx - 1];
     const route = prefix ? `${prefix}/${prevId}` : prevId;
-    const titles = { introduction: 'Introduction', installation: 'Installation', quickstart: 'Quick Start', cli: 'CLI', router: 'Router', state: 'State Management', theming: 'Theming', animations: 'Animations', changelogs: 'Changelogs' };
+    const titles = { introduction: 'Introduction', installation: 'Installation', quickstart: 'Quick Start', cli: 'CLI', router: 'Router', state: 'State Management', components: 'Components', theming: 'Theming', animations: 'Animations', changelogs: 'Changelogs' };
     return { route, params: prevId ? { id: prevId } : {}, title: titles[prevId] || prevId };
   }
 
@@ -157,7 +180,7 @@ export function nextRoute(prefix = '', orderedIds = []) {
     if (idx < 0 || idx >= orderedIds.length - 1) return null;
     const nextId = orderedIds[idx + 1];
     const route = prefix ? `${prefix}/${nextId}` : nextId;
-    const titles = { introduction: 'Introduction', installation: 'Installation', quickstart: 'Quick Start', cli: 'CLI', router: 'Router', state: 'State Management', theming: 'Theming', animations: 'Animations', changelogs: 'Changelogs' };
+    const titles = { introduction: 'Introduction', installation: 'Installation', quickstart: 'Quick Start', cli: 'CLI', router: 'Router', state: 'State Management', components: 'Components', theming: 'Theming', animations: 'Animations', changelogs: 'Changelogs' };
     return { route, params: nextId ? { id: nextId } : {}, title: titles[nextId] || nextId };
   }
 

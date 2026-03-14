@@ -31,9 +31,11 @@ export class Router {
 
   getNotFoundRouteKey() {
     if (!this.routes) return null;
-    const keys = Object.keys(this.routes);
-    const candidates = ['+not-found', 'not-found', '404'];
-    return candidates.find((k) => keys.includes(k)) || null;
+    const entries = Object.entries(this.routes);
+    const byKey = ['+not-found', 'not-found', '404'].find((k) => this.routes[k]);
+    if (byKey) return byKey;
+    const byPath = entries.find(([, r]) => r?.path === '/+not-found');
+    return byPath ? byPath[0] : null;
   }
 
   renderNotFound(missingRoute = '', additionalProps = {}) {
@@ -41,7 +43,28 @@ export class Router {
     const notFoundKey = this.getNotFoundRouteKey();
 
     if (notFoundKey && missingRoute !== notFoundKey) {
-      return this.redirect(notFoundKey, { ...additionalProps, missingRoute, missingPath });
+      const route = this.routes[notFoundKey];
+      if (route) {
+        const effectiveParams = { ...additionalProps, missingRoute, missingPath };
+        const routeInfo = {
+          normalizedRoute: notFoundKey,
+          route,
+          fullPath: missingPath,
+          params: effectiveParams
+        };
+        
+        // Push the not-found route to history with the actual missing path
+        history.pushState({ route: notFoundKey, params: effectiveParams }, '', missingPath);
+        
+        const containerFromCallback = typeof this.onRouteChange === 'function' ? this.onRouteChange(routeInfo) : null;
+        const container = containerFromCallback || this.containerEl;
+        const screenContent = typeof route.render === 'function' ? route.render(effectiveParams) : route.render;
+        if (this.updateTitleCallback) this.updateTitleCallback(notFoundKey);
+        if (container) container.innerHTML = screenContent;
+        const baseTitle = route.title || 'Not Found';
+        document.title = this.titlePrefix ? (baseTitle ? `${this.titlePrefix} - ${baseTitle}` : this.titlePrefix) : baseTitle;
+        return routeInfo;
+      }
     }
 
     const normalizedMissing = missingRoute.startsWith('/') ? missingRoute.substring(1) : missingRoute;
