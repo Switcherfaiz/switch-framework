@@ -19,25 +19,45 @@ import {
   redirect,
   replace,
   reload,
-  getActiveRoute,
-  useEffect,
-  useParams,
-  useSearchParams
+  getActiveRoute
 } from './router/index.js';
-import { SwitchComponent } from './registers/SwitchComponent.js';
+import { SwitchComponent, getCurrentComponent } from './registers/SwitchComponent.js';
 import { TabLayout } from './registers/TabLayout.js';
 import { StackLayout } from './registers/StackLayout.js';
+import { FlatList } from './components/FlatList.js';
 import {
   createState,
-  useState,
+  useState as useStateRaw,
   updateState,
   getState,
   setState,
   subscribeState
 } from './state-managers/index.js';
-
 export { startApp } from './registers/index.js';
 export { ensureComponentDefined as registerComponent } from './registerScreens.js';
+
+const useEffect = (function createUseEffect() {
+  return function useEffect(callback, deps = []) {
+    const comp = getCurrentComponent();
+    if (comp && typeof comp.useEffect === 'function') {
+      return comp.useEffect(callback, deps);
+    }
+    return () => {};
+  };
+})();
+
+function useState(identifier, callback) {
+  if (typeof callback === 'undefined' || callback === null) {
+    throw new Error('useState(identifier, callback) requires a callback. For static full re-render, use this.useState(identifier) in static {}.');
+  }
+  if (typeof callback !== 'function' && !Array.isArray(callback)) {
+    throw new Error('useState(identifier, callback) requires a callback or array of callbacks.');
+  }
+  const [value, unsub] = useStateRaw(identifier, callback);
+  const comp = getCurrentComponent();
+  if (comp && comp._stateUnsubs) comp._stateUnsubs.push(unsub);
+  return [value, unsub];
+}
 
 export function registerFramework() {
   if (!customElements.get('sw-app-initial')) customElements.define('sw-app-initial', TwAppInitial);
@@ -53,6 +73,7 @@ export {
   SwitchComponent,
   TabLayout,
   StackLayout,
+  FlatList,
   // component/routing helpers
   Stack,
   Tabs,
@@ -69,12 +90,10 @@ export {
   replace,
   reload,
   getActiveRoute,
-  useEffect,
-  useParams,
-  useSearchParams,
   // state management
   createState,
   useState,
+  useEffect,
   updateState,
   getState,
   setState,

@@ -45,6 +45,15 @@ export function getActiveRoute() {
   return '';
 }
 
+/** Returns the current active full URL as seen in the browser address bar (e.g. "http://localhost:3000/docs/introduction"). */
+export function getActivePath() {
+  try {
+    return (typeof window !== 'undefined' && window.location && window.location.href) ? window.location.href : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 /**
  * Subscribe to route changes. Accepts a callback that runs when the route changes.
  * Returns an unsubscribe function.
@@ -56,29 +65,6 @@ export function useRouteChangesSubscriber(callback) {
     return globalStates.subscribe(callback);
   }
   return () => {};
-}
-
-/**
- * Subscribe to globalStates keys. When any watched key changes, the callback runs.
- * Use in components to re-render when route/params change.
- * @param {() => void} callback - e.g. () => component._renderToShadow()
- * @param {string[]} deps - globalStates keys to watch, e.g. ['activeRoute', 'routeParams']
- * @returns {() => void} unsubscribe
- */
-export function useEffect(callback, deps = []) {
-  if (typeof globalStates === 'undefined' || !globalStates.subscribe) return () => {};
-  const prev = deps.map((k) => globalStates.getState(k));
-  const unsub = globalStates.subscribe(() => {
-    const changed = deps.some((k, i) => {
-      const cur = globalStates.getState(k);
-      const different = !Object.is(prev[i], cur);
-      prev[i] = cur;
-      return different;
-    });
-    if (changed && typeof callback === 'function') callback();
-  });
-  if (deps.length && typeof callback === 'function') callback();
-  return unsub;
 }
 
 // Navigation functions that work with globalStates

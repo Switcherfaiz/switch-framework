@@ -77,9 +77,7 @@ export class Router {
 
     const containerFromCallback = typeof this.onRouteChange === 'function' ? this.onRouteChange(routeInfo) : null;
     const container = containerFromCallback || this.containerEl;
-    const safePath = this.escapeHtml(missingPath);
-    const fallbackRoute = this.defaultRoute ? ` fallback-route="${this.escapeHtml(this.defaultRoute)}"` : '';
-    if (container) container.innerHTML = `<sw-not-found-screen path="${safePath}"${fallbackRoute}></sw-not-found-screen>`;
+    if (container) container.innerHTML = `<sw-not-found-screen></sw-not-found-screen>`;
     document.title = this.titlePrefix ? `${this.titlePrefix} - Not Found` : 'Not Found';
     return routeInfo;
   }

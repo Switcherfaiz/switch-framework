@@ -1,15 +1,5 @@
-/**
- * StackLayout – base class for stack layouts.
- * Extends SwitchComponent. Provides getContentContainer() for framework injection.
- *
- * User defines static: tag, stackScreens, tabsLayout, splash, initialRoute, init
- * User overrides: render(), styleSheet(), getContentContainer()
- *
- * Used for custom stack layouts. Default stack uses built-in sw-stack-shell.
- */
 import { SwitchComponent } from './SwitchComponent.js';
-import { registerScreens } from '../registerScreens.js';
-
+import { registerScreens, ensureComponentDefined } from '../registerScreens.js';
 export class StackLayout extends SwitchComponent {
   static tag = 'sw-stack-layout';
   static stackScreens = [];
@@ -17,31 +7,53 @@ export class StackLayout extends SwitchComponent {
   static splash = 'sw-starter-splash';
   static initialRoute = 'index';
 
+  // Instance versions (satisfy SwitchComponent/HTMLElement contract)
+  render() { return ''; }
+  styleSheet() { return ''; }
+
+  // Static versions — called by app-shell directly on the class.
+  // Override these as static in your subclass.
+  static render() { return ''; }
+  static styleSheet() { return ''; }
+  
+
   getContentContainer() {
-    return this.shadowRoot?.querySelector('.stack-content') ?? this.shadowRoot?.querySelector('#content') ?? null;
+    
+    return this.shadowRoot?.querySelector('#content') ?? null;
   }
 
   static getLayoutConfig() {
     return {
       name: this.tag || 'sw-stack-layout',
-      layout: 'stack'
+      layout: 'stack',
+      stackrender:this.render(),
+      stackstyleSheet:this.styleSheet()
     };
   }
 
-  /**
-   * Build app layout object from static config. Use as: export default SwStackLayout.getAppLayout();
-   */
   static getAppLayout(validate = true) {
+
+    ensureComponentDefined(this);
     const tabsLayout = this.tabsLayout;
-    const tabScreens = Array.isArray(tabsLayout?.screens) ? tabsLayout.screens : (tabsLayout?.getLayoutConfig?.()?.screens ?? []);
+    const tabScreens = Array.isArray(tabsLayout?.screens)
+      ? tabsLayout.screens
+      : (tabsLayout?.getLayoutConfig?.()?.screens ?? []);
+
+
     const { screens, tabsLayout: resolvedTabsLayout } = registerScreens({
       stackScreens: this.stackScreens || [],
-      tabsLayout: tabsLayout,
-      tabScreens: tabScreens,
+      tabsLayout,
+      tabScreens,
       validate
     });
+
     const initFn = this.init;
+    const stackLayoutConfig = this.getLayoutConfig
+      ? this.getLayoutConfig()
+      : { name: this.tag || 'sw-stack-layout', layout: 'stack' };
+
     return {
+      //initialize and put configs globally for components to access them and resolving them
       splash: this.splash || 'sw-starter-splash',
       initialRoute: this.initialRoute || 'index',
       screens,
@@ -49,6 +61,9 @@ export class StackLayout extends SwitchComponent {
         const result = typeof initFn === 'function' ? await initFn.call(this, api) : {};
         if (resolvedTabsLayout && api?.globalStates) {
           api.globalStates.setState({ tabsLayout: resolvedTabsLayout });
+        }
+        if (api?.globalStates) {
+          api.globalStates.setState({ stackLayout: stackLayoutConfig });
         }
         return { ...result, screens, initialRoute: result?.initialRoute ?? this.initialRoute };
       }

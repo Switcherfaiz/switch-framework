@@ -23,12 +23,13 @@ export const subscribeState = stateManager.subscribe.bind(stateManager);
 /**
  * Hook to consume a state in a component.
  * @param {string} identifier - State identifier
- * @param {(newValue, oldValue, event) => void} [callback] - Optional. Called on each update (and immediately with current value)
+ * @param {((newValue, oldValue, event) => void) | ((newValue, oldValue, event) => void)[]} [callback] - Callback or array of callbacks. Called on each update (and immediately with current value)
  * @returns {[any, () => void]} [currentValue, unsubscribe]
  */
 export function useState(identifier, callback) {
-  const options = callback ? { immediate: true } : { immediate: true };
-  const cb = callback || (() => {});
+  const callbacks = Array.isArray(callback) ? callback : (callback ? [callback] : []);
+  const cb = (newVal, oldVal, ev) => callbacks.forEach((fn) => { if (typeof fn === 'function') fn(newVal, oldVal, ev); });
+  const options = callbacks.length > 0 ? { immediate: true } : { immediate: true };
 
   const unsubscribe = stateManager.subscribe(identifier, cb, options);
   const currentValue = stateManager.getState(identifier);

@@ -1,15 +1,9 @@
+import { getActivePath, getActiveRoute } from '../router/index.js';
+
 export class TwNotFoundScreen extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-  }
-
-  static get observedAttributes() {
-    return ['path', 'fallback-route'];
-  }
-
-  attributeChangedCallback() {
-    this.render();
   }
 
   connectedCallback() {
@@ -17,8 +11,9 @@ export class TwNotFoundScreen extends HTMLElement {
   }
 
   render() {
-    const path = this.getAttribute('path') || window.location.pathname || '';
-    const fallbackRoute = this.getAttribute('fallback-route') || (globalStates?.getState ? globalStates.getState('defaultRoute') : null) || null;
+    const path = getActivePath() || getActiveRoute() || window.location.pathname || '';
+    const fallbackRoute = (globalStates?.getState ? globalStates.getState('defaultRoute') : null) ?? null;
+    const safePath = this._escapeHtml(path);
 
     this.shadowRoot.innerHTML = `
       ${this.styleSheet()}
@@ -27,7 +22,7 @@ export class TwNotFoundScreen extends HTMLElement {
           <div class="code">404</div>
           <div class="h">This route doesn’t exist</div>
           <div class="p">No screen is registered for:</div>
-          <div class="path">${path}</div>
+          <div class="path">${safePath}</div>
 
           <div class="row">
             <button class="btn" id="home" ${!fallbackRoute ? 'style="display:none"' : ''}>Go to start</button>
@@ -71,5 +66,14 @@ export class TwNotFoundScreen extends HTMLElement {
         .btn.secondary:hover{background:var(--surface_3)}
       </style>
     `;
+  }
+
+  _escapeHtml(value = '') {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 }
