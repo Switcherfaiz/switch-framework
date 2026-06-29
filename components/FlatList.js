@@ -3,38 +3,22 @@ import { SwitchComponent, getState, subscribeState } from '../index.js';
 /**
  * FlatList – React Native-inspired list component for Switch Framework
  *
- * STATES (trigger re-render when changed via createState):
- * - data: Array of items to render
- * - loading: Boolean for loading state
- * - refreshing: Boolean for pull-to-refresh state
- * - error: Error state for failed loads
- *
- * REFS (for DOM manipulation without re-render):
- * - _containerRef: The scrollable container element
- * - _itemsRef: Map of rendered item elements
- * - _scrollPositionRef: Current scroll position
- * - _isNearEndRef: Boolean for end detection
- * - _visibleItemsRef: Set of currently visible item keys
+ * Styling:
+ * - Host (global CSS): `my-flat-list { }` — targets the custom element (:host)
+ * - Extended styleSheet(): use `flatlist` as the inner scope alias, e.g.
+ *   `flatlist::-webkit-scrollbar { width: 6px; }` or `flatlist .flat-list-content { }`
+ * - CSS variables on `:host` in styleSheet inherit into shadow children
  *
  * USER OVERRIDABLE METHODS:
- * - renderItem({ item, index, separators }): Render a single item
- * - renderLoader(): Render loading indicator
- * - renderEmpty(): Render when data is empty
- * - renderHeader(): Render header component
- * - renderFooter(): Render footer component
- * - renderSeparator(): Render separator between items
- * - renderError(): Render error state
- * - keyExtractor(item, index): Generate unique key for item
- * - onEndReached(): Called when scrolling near end
- * - onRefresh(): Called for pull-to-refresh
- * - onScroll(event): Called on scroll events
- * - getItemLayout(data, index): For optimization with fixed-size items
+ * - renderItem, renderLoader, renderEmpty, renderHeader, renderFooter, renderSeparator, renderError
+ * - keyExtractor, onEndReached, onRefresh, onScroll, getItemLayout, styleSheet, render
  */
+
+const FLATLIST_SCOPE = 'flatlist';
 
 export class FlatList extends SwitchComponent {
   static tag = 'sw-flat-list';
 
-  // Static configuration that users can override
   static numColumns = 1;
   static horizontal = false;
   static initialNumToRender = 10;
@@ -43,45 +27,35 @@ export class FlatList extends SwitchComponent {
   static onEndReachedThreshold = 0.5;
   static trackVisibleItems = false;
 
+  /** Rewrites `flatlist::…` / `flatlist .class` to `.flatlist…` in extended styleSheets */
+  static processStyleSheet(css) {
+    return String(css).replace(
+      new RegExp(`(?<![\\w.-])${FLATLIST_SCOPE}(?=::|[\\s.#\\[,>+~])`, 'gi'),
+      `.${FLATLIST_SCOPE}`
+    );
+  }
+
   constructor() {
     super();
 
-    // REFS: DOM manipulation without re-rendering entire component
     this._containerRef = null;
     this._itemsRef = new Map();
     this._scrollPositionRef = { x: 0, y: 0 };
     this._isNearEndRef = false;
     this._visibleItemsRef = new Set();
-
-    // Internal non-reactive state
     this._renderedItems = [];
     this._isMounted = false;
-
-    // Throttle expensive scroll computations
     this._visibleUpdateRaf = null;
   }
 
-  // ========== USER OVERRIDABLE RENDER METHODS ==========
-
-  /**
-   * Render a single item - MUST be overridden by user
-   * @param {Object} params - { item, index, separators: { highlight, unhighlight } }
-   * @returns {string} HTML string for the item
-   */
   renderItem({ item, index, separators }) {
     return `<div class="flat-list-item" data-index="${index}">${JSON.stringify(item)}</div>`;
   }
 
-  /**
-   * Extract unique key from item - override for custom keys
-   */
   keyExtractor(item, index) {
     return item?.id ?? item?.key ?? `item-${index}`;
   }
 
-  /**
-   * Render loading indicator at bottom
-   */
   renderLoader() {
     return `
       <div class="flat-list-loader">
@@ -92,76 +66,41 @@ export class FlatList extends SwitchComponent {
     `;
   }
 
-  /**
-   * Render when data array is empty
-   */
   renderEmpty() {
     return `<div class="flat-list-empty">No items</div>`;
   }
 
-  /**
-   * Render header component
-   */
   renderHeader() {
     return '';
   }
 
-  /**
-   * Render footer component
-   */
   renderFooter() {
     return '';
   }
 
-  /**
-   * Render separator between items
-   */
   renderSeparator() {
     return '<div class="flat-list-separator"></div>';
   }
 
-  /**
-   * Render error state
-   */
   renderError() {
     return `<div class="flat-list-error">Error loading data</div>`;
   }
 
-  /**
-   * Get item layout for optimization (fixed-size items)
-   * Return { length: number, offset: number, index: number }
-   */
   getItemLayout(data, index) {
     return null;
   }
 
-  // ========== EVENT HANDLERS ==========
-
-  /**
-   * Called when user scrolls near the end
-   * User should load more data here
-   */
   onEndReached() {
     console.log('[FlatList] onEndReached');
   }
 
-  /**
-   * Called for pull-to-refresh
-   * User should refresh data here
-   */
   onRefresh() {
     console.log('[FlatList] onRefresh');
   }
 
-  /**
-   * Scroll event handler
-   * @param {Event} event - Scroll event
-   */
   onScroll(event) {
     this._handleScroll(event);
   }
-
-  // ========== INTERNAL METHODS ==========
 
   _handleScroll(event) {
     const container = event.target;
@@ -233,8 +172,6 @@ export class FlatList extends SwitchComponent {
     };
   }
 
-  // ========== PUBLIC API METHODS ==========
-
   scrollToIndex({ index, animated = true, viewOffset = 0 }) {
     const itemKey = this._renderedItems[index];
     if (!itemKey) return;
@@ -266,9 +203,7 @@ export class FlatList extends SwitchComponent {
     });
   }
 
-  recordInteraction() {
-    // Used for highlighting items on interaction
-  }
+  recordInteraction() {}
 
   flashScrollIndicators() {
     if (this._containerRef) {
@@ -279,11 +214,9 @@ export class FlatList extends SwitchComponent {
     }
   }
 
-  // ========== LIFECYCLE ==========
-
   onMount() {
     this._isMounted = true;
-    this._containerRef = this.select('.flat-list-container');
+    this._containerRef = this.select('.flatlist');
 
     if (this._containerRef) {
       this._containerRef.addEventListener('scroll', (e) => this.onScroll(e));
@@ -326,8 +259,6 @@ export class FlatList extends SwitchComponent {
     this._itemsRef.clear();
     this._visibleItemsRef.clear();
   }
-
-  // ========== RENDER ==========
 
   render() {
     const keys = this._getStateKeys();
@@ -382,10 +313,10 @@ export class FlatList extends SwitchComponent {
     ].filter(Boolean).join(' ');
 
     return `
-      <div class="flat-list-wrapper">
+      <div class="flatlist flat-list-wrapper">
         ${this.renderHeader()}
 
-        <div class="${containerClass}" style="${this._getContainerStyle()}">
+        <div class="flatlist ${containerClass}" style="${this._getContainerStyle()}">
           <div class="flat-list-content" style="${this._getContentStyle()}">
             ${itemsHtml}
           </div>
@@ -431,6 +362,11 @@ export class FlatList extends SwitchComponent {
           display: block;
           width: 100%;
           height: 100%;
+        }
+
+        .flatlist {
+          scrollbar-width: inherit;
+          scrollbar-color: inherit;
         }
 
         .flat-list-wrapper {
@@ -496,8 +432,8 @@ export class FlatList extends SwitchComponent {
           top: 0;
           height: 100%;
           width: 40%;
-          background: linear-gradient(90deg, 
-            var(--primary, #3b82f6) 0%, 
+          background: linear-gradient(90deg,
+            var(--primary, #3b82f6) 0%,
             var(--primary-light, #60a5fa) 50%,
             var(--primary, #3b82f6) 100%
           );

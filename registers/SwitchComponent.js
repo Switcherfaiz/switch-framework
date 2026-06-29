@@ -65,7 +65,7 @@ export class SwitchComponent extends HTMLElement {
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
     const html = typeof this.render === 'function' ? this.render() : '';
-    const styles = typeof this.styleSheet === 'function' ? this.styleSheet() : '';
+    const styles = this._collectStyleSheets();
     const styleBlock = styles
       ? (String(styles).trim().startsWith('<style') ? styles : `<style>${styles}</style>`)
       : '';
@@ -77,6 +77,55 @@ export class SwitchComponent extends HTMLElement {
     } finally {
       _currentComponent = prev;
     }
+  }
+
+  /**
+   * Merge styleSheet() from the full inheritance chain (base → extended).
+   * Extended classes only add their rules; no super.styleSheet() needed.
+   */
+  _collectStyleSheets() {
+    const constructors = [];
+    let ctor = this.constructor;
+
+    while (ctor && ctor.prototype) {
+      constructors.unshift(ctor);
+      ctor = Object.getPrototypeOf(ctor);
+    }
+
+    const parts = [];
+    const seen = new Set();
+
+    for (const C of constructors) {
+      const fn = C.prototype.styleSheet;
+      if (typeof fn !== 'function' || fn === SwitchComponent.prototype.styleSheet) continue;
+      if (seen.has(fn)) continue;
+      seen.add(fn);
+      const raw = fn.call(this);
+      if (raw) parts.push(this._processStyleSheet(raw));
+    }
+
+    return parts.join('');
+  }
+
+  /**
+   * Optional hook: static processStyleSheet(css) on a class rewrites selector aliases in its styles.
+   */
+  _processStyleSheet(css) {
+    let out = String(css);
+    const processors = [];
+    let ctor = this.constructor;
+
+    while (ctor && ctor.prototype) {
+      if (typeof ctor.processStyleSheet === 'function') {
+        processors.unshift(ctor.processStyleSheet);
+      }
+      ctor = Object.getPrototypeOf(ctor);
+    }
+
+    for (const fn of processors) {
+      out = fn(out);
+    }
+    return out;
   }
 
   _setupStaticStates() {

@@ -4,6 +4,7 @@ import {
   encodeData,
   decodeData
 } from '../router/index.js';
+import { syncElectronTitleBarHost, installElectronTitleBarRouteSync } from '../electron/shell.js';
 
 export class TwAppInitial extends HTMLElement {
   constructor() {
@@ -121,6 +122,7 @@ export class TwAppInitial extends HTMLElement {
           activeRoutesHistory: newHistory
         });
         document.dispatchEvent(new CustomEvent('router:change', { bubbles: true, detail: routeInfo }));
+        syncElectronTitleBarHost(routeInfo.normalizedRoute);
 
         const currentShell = this.shadowRoot.querySelector('sw-app-shell');
         if (currentShell?.setLayout) currentShell.setLayout(layoutType);
@@ -151,6 +153,7 @@ export class TwAppInitial extends HTMLElement {
     document.addEventListener('router:back', () => this.router?.go_back());
 
     this.router.start(initialRoute);
+    this._electronTitleBarUnsub = installElectronTitleBarRouteSync();
 
     document.dispatchEvent(new CustomEvent('app:ready', { bubbles: true, detail: { globalStates: this.globalStates } }));
   }

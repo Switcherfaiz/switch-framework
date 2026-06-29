@@ -36,6 +36,7 @@ export class TwStackShell extends HTMLElement {
 
   render() {
     if (this.shadowRoot.querySelector('style')) return;
+
     this.shadowRoot.innerHTML = `
       ${this.styleSheet()}
       <div id="content"></div>
@@ -46,14 +47,18 @@ export class TwStackShell extends HTMLElement {
     return `
       <style>
         :host {
-          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-          display: block; width: 100%; height: 100dvh; overflow: hidden;
+          display: block;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
         #content {
-          background: transparent; height: 100%;
-          overflow: auto; overflow-x: hidden;
+          background: transparent;
+          height: 100%;
+          overflow: auto;
+          overflow-x: hidden;
         }
       </style>
     `;

@@ -25,6 +25,7 @@ import { SwitchComponent, getCurrentComponent } from './registers/SwitchComponen
 import { TabLayout } from './registers/TabLayout.js';
 import { StackLayout } from './registers/StackLayout.js';
 import { FlatList } from './components/FlatList.js';
+import { ElectronTitleBar } from './components/ElectronTitleBar.js';
 import {
   createState,
   useState as useStateRaw,
@@ -66,6 +67,7 @@ export function registerFramework() {
   if (!customElements.get('sw-app-shell')) customElements.define('sw-app-shell', TwAppShell);
   if (!customElements.get('sw-not-found-screen')) customElements.define('sw-not-found-screen', TwNotFoundScreen);
   if (!customElements.get('sw-splash-screen')) customElements.define('sw-splash-screen', TwSplashScreen);
+  if (!customElements.get('sw-electron-titlebar')) customElements.define('sw-electron-titlebar', ElectronTitleBar);
 }
 
 export {
@@ -74,6 +76,7 @@ export {
   TabLayout,
   StackLayout,
   FlatList,
+  ElectronTitleBar,
   // component/routing helpers
   Stack,
   Tabs,

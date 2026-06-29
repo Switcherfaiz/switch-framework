@@ -1,3 +1,4 @@
+import { getElectronTitleBarTag } from '../electron/shell.js';
 
 export class TwAppShell extends HTMLElement {
   constructor() {
@@ -8,12 +9,10 @@ export class TwAppShell extends HTMLElement {
     this.stackstyleSheet;
   }
 
-  
   connectedCallback() {
-    const {stackrender,stackstyleSheet}=globalStates.getState("stackLayout");
-    this.stackrender=stackrender||"";
-    this.stackstyleSheet=stackstyleSheet||"";
-    // Listen for layout changes from stack-shell
+    const { stackrender, stackstyleSheet } = globalStates.getState('stackLayout');
+    this.stackrender = stackrender || '';
+    this.stackstyleSheet = stackstyleSheet || '';
     this.render();
     this.setLayout('stack');
   }
@@ -37,7 +36,14 @@ export class TwAppShell extends HTMLElement {
   }
 
   getPopupsContainer() {
-    return this.shadowRoot.querySelector("#stack-contents");
+    return this.shadowRoot.querySelector('#stack-contents');
+  }
+
+  _syncTitleBars(layoutType = 'stack') {
+    const tabsBar = this.shadowRoot.querySelector('[data-host="tabs"]');
+    const stackBar = this.shadowRoot.querySelector('[data-host="stack"]');
+    if (tabsBar) tabsBar.hidden = layoutType !== 'tabs';
+    if (stackBar) stackBar.hidden = layoutType !== 'stack';
   }
 
   setLayout(layoutType = 'stack') {
@@ -54,32 +60,58 @@ export class TwAppShell extends HTMLElement {
     if (layoutContent) {
       layoutContent.style.display = layoutType === 'tabs' ? 'none' : 'block';
     }
+
+    this._syncTitleBars(layoutType);
   }
 
   render() {
-    
+    const titleBarTag = getElectronTitleBarTag();
+
     this.shadowRoot.innerHTML = `
       ${this.styleSheet()}
-      <sw-tabs-shell style="display:none"></sw-tabs-shell>
-      <sw-stack-shell></sw-stack-shell>
+      <${titleBarTag} data-host="tabs"></${titleBarTag}>
+      <${titleBarTag} data-host="stack"></${titleBarTag}>
+      <div class="app-shell-main">
+        <sw-tabs-shell style="display:none"></sw-tabs-shell>
+        <sw-stack-shell></sw-stack-shell>
+      </div>
       <div class="stack-contents" id="stack-contents">${this.stackrender}</div>
     `;
   }
 
   styleSheet() {
-    var userCss=this.stackstyleSheet.replace("<style>","");
-    userCss=userCss.replace("</style>","");
-    userCss=userCss.trim();
+    var userCss = this.stackstyleSheet.replace('<style>', '');
+    userCss = userCss.replace('</style>', '');
+    userCss = userCss.trim();
     return `
       <style>
         ${userCss}
         :host {
-          display: block; width: 100%; min-height: 100dvh;
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          min-height: 100dvh;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
+        .app-shell-main {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        sw-tabs-shell,
+        sw-stack-shell {
+          flex: 1;
+          min-height: 0;
+          width: 100%;
+        }
         .stack-contents {
-          position: fixed; inset: 0; z-index: 10000; pointer-events: none;
+          position: fixed;
+          inset: 0;
+          z-index: 10000;
+          pointer-events: none;
         }
         .stack-contents > * { pointer-events: none; }
       </style>
