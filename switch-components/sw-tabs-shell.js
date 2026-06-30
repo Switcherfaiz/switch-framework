@@ -55,38 +55,25 @@ export class TwTabsShell extends HTMLElement {
     const el = document.createElement(tagName);
     el.setAttribute('data-tabs-layout', '1');
     this._layoutEl = el;
-    const body = this.shadowRoot.querySelector('.shell-body');
-    if (body) body.appendChild(el);
-    else this.shadowRoot.appendChild(el);
+    this.shadowRoot.appendChild(el);
   }
 
   render() {
     if (this.shadowRoot.querySelector('style')) return;
 
-    this.shadowRoot.innerHTML = `
-      ${this.styleSheet()}
-      <div class="shell-body"></div>
-    `;
+    this.shadowRoot.innerHTML = `${this.styleSheet()}`;
   }
 
   styleSheet() {
     return `
       <style>
         :host {
-          display: flex;
-          flex-direction: column;
+          display: block;
           width: 100%;
-          height: 100%;
+          height: 100dvh;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
-        .shell-body {
-          flex: 1;
-          min-height: 0;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
       </style>
     `;
   }

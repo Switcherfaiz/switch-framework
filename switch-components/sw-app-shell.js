@@ -71,10 +71,8 @@ export class TwAppShell extends HTMLElement {
       ${this.styleSheet()}
       <${titleBarTag} data-host="tabs"></${titleBarTag}>
       <${titleBarTag} data-host="stack"></${titleBarTag}>
-      <div class="app-shell-main">
-        <sw-tabs-shell style="display:none"></sw-tabs-shell>
-        <sw-stack-shell></sw-stack-shell>
-      </div>
+      <sw-tabs-shell style="display:none"></sw-tabs-shell>
+      <sw-stack-shell></sw-stack-shell>
       <div class="stack-contents" id="stack-contents">${this.stackrender}</div>
     `;
   }
@@ -87,25 +85,18 @@ export class TwAppShell extends HTMLElement {
       <style>
         ${userCss}
         :host {
-          display: flex;
-          flex-direction: column;
+          display: block;
           width: 100%;
           min-height: 100dvh;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
-        .app-shell-main {
-          flex: 1;
-          min-height: 0;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-        sw-tabs-shell,
-        sw-stack-shell {
-          flex: 1;
-          min-height: 0;
-          width: 100%;
+        sw-electron-titlebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 10001;
         }
         .stack-contents {
           position: fixed;
