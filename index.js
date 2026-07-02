@@ -32,7 +32,9 @@ import {
   updateState,
   getState,
   setState,
-  subscribeState
+  subscribeState,
+  createRef,
+  bindRefTarget
 } from './state-managers/index.js';
 export { startApp } from './registers/index.js';
 export { ensureComponentDefined as registerComponent } from './registerScreens.js';
@@ -58,6 +60,17 @@ function useState(identifier, callback) {
   const comp = getCurrentComponent();
   if (comp && comp._stateUnsubs) comp._stateUnsubs.push(unsub);
   return [value, unsub];
+}
+
+function useRef(target) {
+  const ref = createRef('flatlist');
+  const comp = target || getCurrentComponent();
+  bindRefTarget(ref, comp);
+  if (comp) {
+    comp._instanceRefs = comp._instanceRefs || [];
+    comp._instanceRefs.push(ref);
+  }
+  return ref;
 }
 
 export function registerFramework() {
@@ -97,6 +110,8 @@ export {
   createState,
   useState,
   useEffect,
+  useRef,
+  createRef,
   updateState,
   getState,
   setState,

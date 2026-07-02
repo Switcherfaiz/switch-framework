@@ -143,4 +143,66 @@ export class SwitchStateManager {
   getEventName(identifier) {
     return `switchstate:${identifier}`;
   }
+
+  /** @param {'flatlist'} [kind='flatlist'] */
+  createRef(kind = 'flatlist') {
+    const ref = {
+      __switchRef: true,
+      kind,
+      _target: null,
+
+      scrollToIndex({ index, animated = true, viewOffset = 0, viewPosition } = {}) {
+        ref._target?.scrollToIndex?.({ index, animated, viewOffset, viewPosition });
+      },
+
+      scrollToEnd({ animated = true } = {}) {
+        ref._target?.scrollToEnd?.({ animated });
+      },
+
+      scrollToOffset({ offset, animated = true } = {}) {
+        ref._target?.scrollToOffset?.({ offset, animated });
+      },
+
+      scrollBy({ x = 0, y = 0, animated = true } = {}) {
+        ref._target?.scrollBy?.({ x, y, animated });
+      },
+
+      flashScrollIndicators() {
+        ref._target?.flashScrollIndicators?.();
+      }
+    };
+
+    return ref;
+  }
+
+  bindRefTarget(ref, target) {
+    if (ref && ref.__switchRef) ref._target = target || null;
+  }
+
+  registerStaticRef(Cls, propName, ref) {
+    if (!Cls || !propName || !ref?.__switchRef) return ref;
+    Object.defineProperty(Cls, propName, {
+      value: ref,
+      configurable: true,
+      enumerable: true
+    });
+    if (!Cls.__staticRefs) Cls.__staticRefs = [];
+    if (!Cls.__staticRefs.includes(propName)) Cls.__staticRefs.push(propName);
+    return ref;
+  }
+
+  bindStaticRefs(instance) {
+    const Cls = instance?.constructor;
+    if (!Cls?.__staticRefs) return;
+    for (const prop of Cls.__staticRefs) {
+      this.bindRefTarget(Cls[prop], instance);
+    }
+  }
+
+  bindInstanceRefs(instance) {
+    if (!instance?._instanceRefs) return;
+    for (const ref of instance._instanceRefs) {
+      this.bindRefTarget(ref, instance);
+    }
+  }
 }

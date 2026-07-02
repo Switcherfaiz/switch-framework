@@ -42,4 +42,10 @@ export const unsubscribeState = (unsubscribeFn) => {
   if (typeof unsubscribeFn === 'function') unsubscribeFn();
 };
 
+export const createRef = stateManager.createRef.bind(stateManager);
+export const bindRefTarget = stateManager.bindRefTarget.bind(stateManager);
+export const registerStaticRef = stateManager.registerStaticRef.bind(stateManager);
+export const bindStaticRefs = stateManager.bindStaticRefs.bind(stateManager);
+export const bindInstanceRefs = stateManager.bindInstanceRefs.bind(stateManager);
+
 export default stateManager;

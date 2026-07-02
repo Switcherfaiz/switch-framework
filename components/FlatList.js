@@ -1,4 +1,5 @@
 import { SwitchComponent, getState, subscribeState } from '../index.js';
+import { bindStaticRefs, bindInstanceRefs } from '../state-managers/index.js';
 
 /**
  * FlatList – React Native-inspired list component for Switch Framework
@@ -26,6 +27,20 @@ export class FlatList extends SwitchComponent {
   static windowSize = 21;
   static onEndReachedThreshold = 0.5;
   static trackVisibleItems = false;
+  static showsVerticalScrollIndicator = true;
+  static showsHorizontalScrollIndicator = true;
+  /** Horizontal row item width, e.g. `'100%'` (carousel) or `'148px'`. Applied to item wrappers. */
+  static horizontalItemWidth = '';
+
+  /** Override default `${tag}-data` state key for this list's items */
+  static dataState = '';
+  /** State key — FlatList reads `getState(horizontalState)` on each render */
+  static horizontalState = '';
+  /** State key — FlatList reads `getState(numColumnsState)` on each render */
+  static numColumnsState = '';
+  static loadingState = '';
+  static refreshingState = '';
+  static errorState = '';
 
   /** Rewrites `flatlist::…` / `flatlist .class` to `.flatlist…` in extended styleSheets */
   static processStyleSheet(css) {
@@ -108,8 +123,8 @@ export class FlatList extends SwitchComponent {
 
     this._scrollPositionRef = { x: scrollLeft, y: scrollTop };
 
-    const isHorizontal = this.constructor.horizontal;
-    const threshold = this.constructor.onEndReachedThreshold ?? 0.5;
+    const isHorizontal = this._isHorizontal();
+    const threshold = this._readConfig('onEndReachedThreshold', 0.5);
 
     if (!isHorizontal) {
       const thresholdPixels = threshold * clientHeight;
@@ -164,41 +179,118 @@ export class FlatList extends SwitchComponent {
 
   _getStateKeys() {
     const tag = this.constructor.tag || 'flat-list';
-    return {
+    const defaults = {
       data: `${tag}-data`,
       loading: `${tag}-loading`,
       refreshing: `${tag}-refreshing`,
       error: `${tag}-error`
     };
+    const Cls = this.constructor;
+    return {
+      data: Cls.dataState || defaults.data,
+      loading: Cls.loadingState || defaults.loading,
+      refreshing: Cls.refreshingState || defaults.refreshing,
+      error: Cls.errorState || defaults.error
+    };
   }
 
-  scrollToIndex({ index, animated = true, viewOffset = 0 }) {
+  _readConfig(prop, fallback) {
+    const Cls = this.constructor;
+    const stateKey = Cls[`${prop}State`];
+    if (stateKey && typeof stateKey === 'string') {
+      try {
+        const val = getState(stateKey);
+        if (val !== undefined && val !== null) return val;
+      } catch (_) {}
+    }
+    const direct = Cls[prop];
+    return direct !== undefined && direct !== null ? direct : fallback;
+  }
+
+  _isHorizontal() {
+    return !!this._readConfig('horizontal', false);
+  }
+
+  _getNumColumns() {
+    const n = this._readConfig('numColumns', 1);
+    return Number(n) || 1;
+  }
+
+  _showsVerticalScrollIndicator() {
+    return !!this._readConfig('showsVerticalScrollIndicator', true);
+  }
+
+  _showsHorizontalScrollIndicator() {
+    return !!this._readConfig('showsHorizontalScrollIndicator', true);
+  }
+
+  _getScrollIndicatorClasses(horizontal) {
+    const classes = [];
+    if (!horizontal && !this._showsVerticalScrollIndicator()) classes.push('hide-scroll-v');
+    if (horizontal && !this._showsHorizontalScrollIndicator()) classes.push('hide-scroll-h');
+    return classes;
+  }
+
+  scrollToIndex({ index, animated = true, viewOffset = 0, viewPosition } = {}) {
     const itemKey = this._renderedItems[index];
-    if (!itemKey) return;
+    if (!itemKey || !this._containerRef) return;
 
     const element = this._itemsRef.get(itemKey);
-    if (element) {
-      element.scrollIntoView({ behavior: animated ? 'smooth' : 'auto', block: 'start' });
+    if (!element) return;
+
+    const horizontal = this._isHorizontal();
+    const container = this._containerRef;
+
+    if (viewPosition !== undefined && viewPosition !== null) {
+      const itemRect = element.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      if (horizontal) {
+        const itemStart = itemRect.left - containerRect.left + container.scrollLeft;
+        const target = itemStart - (container.clientWidth * viewPosition) + viewOffset;
+        container.scrollTo({ left: target, behavior: animated ? 'smooth' : 'auto' });
+      } else {
+        const itemStart = itemRect.top - containerRect.top + container.scrollTop;
+        const target = itemStart - (container.clientHeight * viewPosition) + viewOffset;
+        container.scrollTo({ top: target, behavior: animated ? 'smooth' : 'auto' });
+      }
+      return;
     }
+
+    element.scrollIntoView({
+      behavior: animated ? 'smooth' : 'auto',
+      block: horizontal ? 'nearest' : 'start',
+      inline: horizontal ? 'start' : 'nearest'
+    });
   }
 
   scrollToEnd({ animated = true } = {}) {
     if (!this._containerRef) return;
-    const { scrollHeight, scrollWidth } = this._containerRef;
-    const isHorizontal = this.constructor.horizontal;
+    const container = this._containerRef;
+    const isHorizontal = this._isHorizontal();
 
-    this._containerRef.scrollTo({
-      [isHorizontal ? 'left' : 'top']: isHorizontal ? scrollWidth : scrollHeight,
+    container.scrollTo({
+      [isHorizontal ? 'left' : 'top']: isHorizontal
+        ? container.scrollWidth - container.clientWidth
+        : container.scrollHeight - container.clientHeight,
       behavior: animated ? 'smooth' : 'auto'
     });
   }
 
   scrollToOffset({ offset, animated = true }) {
     if (!this._containerRef) return;
-    const isHorizontal = this.constructor.horizontal;
+    const isHorizontal = this._isHorizontal();
 
     this._containerRef.scrollTo({
       [isHorizontal ? 'left' : 'top']: offset,
+      behavior: animated ? 'smooth' : 'auto'
+    });
+  }
+
+  scrollBy({ x = 0, y = 0, animated = true } = {}) {
+    if (!this._containerRef) return;
+    this._containerRef.scrollBy({
+      left: x,
+      top: y,
       behavior: animated ? 'smooth' : 'auto'
     });
   }
@@ -216,7 +308,7 @@ export class FlatList extends SwitchComponent {
 
   onMount() {
     this._isMounted = true;
-    this._containerRef = this.select('.flatlist');
+    this._containerRef = this.select('.flat-list-container');
 
     if (this._containerRef) {
       this._containerRef.addEventListener('scroll', (e) => this.onScroll(e));
@@ -228,7 +320,54 @@ export class FlatList extends SwitchComponent {
       if (key) this._itemsRef.set(key, item);
     });
 
+    bindStaticRefs(this);
+    bindInstanceRefs(this);
+    this._syncHorizontalSlideWidths();
+    requestAnimationFrame(() => this._syncHorizontalSlideWidths());
+
+    if (this._isHorizontal() && this.constructor.horizontalItemWidth === '100%' && this._containerRef && typeof ResizeObserver !== 'undefined') {
+      this._resizeOb = new ResizeObserver(() => this._syncHorizontalSlideWidths());
+      this._resizeOb.observe(this._containerRef);
+      this.addOnDestroy(() => {
+        this._resizeOb?.disconnect();
+        this._resizeOb = null;
+      });
+    }
+
     this._subscribeToStates();
+  }
+
+  _syncHorizontalSlideWidths() {
+    if (!this._isHorizontal() || !this._containerRef) return;
+
+    const widthMode = this.constructor.horizontalItemWidth;
+    const container = this._containerRef;
+    const viewport = container.clientWidth;
+    if (!viewport) return;
+
+    if (widthMode === '100%') {
+      container.style.scrollSnapType = 'x mandatory';
+      this.selectAll('.flat-list-item-wrapper').forEach((el) => {
+        el.style.flex = `0 0 ${viewport}px`;
+        el.style.width = `${viewport}px`;
+        el.style.maxWidth = `${viewport}px`;
+        el.style.scrollSnapAlign = 'start';
+      });
+      return;
+    }
+
+    if (widthMode && widthMode !== 'auto') {
+      this.selectAll('.flat-list-item-wrapper').forEach((el) => {
+        el.style.flex = `0 0 ${widthMode}`;
+        el.style.width = widthMode;
+        el.style.maxWidth = widthMode;
+      });
+      return;
+    }
+
+    this.selectAll('.flat-list-item-wrapper').forEach((el) => {
+      el.style.flex = '0 0 auto';
+    });
   }
 
   _subscribeToStates() {
@@ -256,6 +395,8 @@ export class FlatList extends SwitchComponent {
       this._visibleUpdateRaf = null;
     }
     this._containerRef = null;
+    this._resizeOb?.disconnect();
+    this._resizeOb = null;
     this._itemsRef.clear();
     this._visibleItemsRef.clear();
   }
@@ -272,8 +413,8 @@ export class FlatList extends SwitchComponent {
     try { refreshing = getState(keys.refreshing) ?? false; } catch (_) {}
     try { error = getState(keys.error) ?? null; } catch (_) {}
 
-    const numColumns = this.constructor.numColumns ?? 1;
-    const horizontal = this.constructor.horizontal ?? false;
+    const numColumns = this._getNumColumns();
+    const horizontal = this._isHorizontal();
     const isGrid = numColumns > 1 && !horizontal;
 
     let itemsHtml = '';
@@ -296,8 +437,10 @@ export class FlatList extends SwitchComponent {
         const itemHtml = this.renderItem({ item, index, separators });
         const separator = index < data.length - 1 ? this.renderSeparator() : '';
 
+        const wrapperStyle = this._getItemWrapperStyle(isGrid, numColumns, horizontal);
+
         itemsHtml += `
-          <div class="flat-list-item-wrapper" data-key="${key}" data-index="${index}" style="${isGrid ? `flex: 0 0 calc(${100 / numColumns}% - 8px);` : ''}">
+          <div class="flat-list-item-wrapper" data-key="${key}" data-index="${index}" style="${wrapperStyle}">
             ${itemHtml}
           </div>
           ${separator}
@@ -305,11 +448,13 @@ export class FlatList extends SwitchComponent {
       });
     }
 
+    const scrollClasses = this._getScrollIndicatorClasses(horizontal);
     const containerClass = [
       'flat-list-container',
       horizontal ? 'horizontal' : 'vertical',
       isGrid ? 'grid' : '',
-      refreshing ? 'refreshing' : ''
+      refreshing ? 'refreshing' : '',
+      ...scrollClasses
     ].filter(Boolean).join(' ');
 
     return `
@@ -317,7 +462,7 @@ export class FlatList extends SwitchComponent {
         ${this.renderHeader()}
 
         <div class="flatlist ${containerClass}" style="${this._getContainerStyle()}">
-          <div class="flat-list-content" style="${this._getContentStyle()}">
+          <div class="flat-list-content${horizontal ? ' horizontal-row' : ''}" style="${this._getContentStyle()}">
             ${itemsHtml}
           </div>
           ${loading ? this.renderLoader() : ''}
@@ -338,20 +483,29 @@ export class FlatList extends SwitchComponent {
     if (item) item.classList.remove('highlighted');
   }
 
+  _getItemWrapperStyle(isGrid, numColumns, horizontal) {
+    if (isGrid) return `flex: 0 0 calc(${100 / numColumns}% - 8px);`;
+    if (horizontal) {
+      const w = this.constructor.horizontalItemWidth;
+      if (w) return `flex: 0 0 ${w};`;
+      return 'flex: 0 0 auto;';
+    }
+    return '';
+  }
+
   _getContainerStyle() {
-    const horizontal = this.constructor.horizontal ?? false;
-    return horizontal
-      ? 'overflow-x: auto; overflow-y: hidden; display: flex;'
-      : 'overflow-y: auto; overflow-x: hidden;';
+    const horizontal = this._isHorizontal();
+    if (horizontal) return 'overflow-x: auto; overflow-y: hidden;';
+    return 'overflow-y: auto; overflow-x: hidden;';
   }
 
   _getContentStyle() {
-    const numColumns = this.constructor.numColumns ?? 1;
-    const horizontal = this.constructor.horizontal ?? false;
+    const numColumns = this._getNumColumns();
+    const horizontal = this._isHorizontal();
     const isGrid = numColumns > 1 && !horizontal;
 
     if (isGrid) return 'display: flex; flex-wrap: wrap; gap: 8px;';
-    if (horizontal) return 'display: flex; flex-direction: row;';
+    if (horizontal) return 'display: flex; flex-direction: row; flex-wrap: nowrap; align-items: stretch; height: 100%; width: max-content; min-width: 100%;';
     return '';
   }
 
@@ -381,6 +535,22 @@ export class FlatList extends SwitchComponent {
           position: relative;
         }
 
+        .flat-list-container.hide-scroll-v {
+          scrollbar-width: none;
+        }
+
+        .flat-list-container.hide-scroll-v::-webkit-scrollbar {
+          display: none;
+        }
+
+        .flat-list-container.hide-scroll-h {
+          scrollbar-width: none;
+        }
+
+        .flat-list-container.hide-scroll-h::-webkit-scrollbar {
+          display: none;
+        }
+
         .flat-list-container.vertical {
           scroll-behavior: smooth;
           -webkit-overflow-scrolling: touch;
@@ -389,6 +559,23 @@ export class FlatList extends SwitchComponent {
         .flat-list-container.horizontal {
           scroll-behavior: smooth;
           -webkit-overflow-scrolling: touch;
+        }
+
+        .flat-list-content.horizontal-row,
+        .flat-list-container.horizontal .flat-list-content {
+          display: flex;
+          flex-direction: row;
+          flex-wrap: nowrap;
+          align-items: flex-start;
+          width: max-content;
+          min-width: 100%;
+          min-height: unset;
+          height: auto;
+        }
+
+        .flat-list-container.horizontal .flat-list-item-wrapper {
+          flex-shrink: 0;
+          box-sizing: border-box;
         }
 
         .flat-list-content {

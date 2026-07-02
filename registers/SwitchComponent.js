@@ -1,5 +1,7 @@
 import { subscribeState } from '../state-managers/index.js';
 import { registerStaticState, getStatesForSymbol } from '../staticStateRegistry.js';
+import { createRef, registerStaticRef } from '../state-managers/index.js';
+import { adoptGlobalComponentSheet } from '../switch-components/globalStyles/index.js';
 
 /**
  * SwitchComponent – base class for screens and components.
@@ -64,12 +66,15 @@ export class SwitchComponent extends HTMLElement {
 
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
+    this._effectUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
+    this._effectUnsubs = [];
     const html = typeof this.render === 'function' ? this.render() : '';
     const styles = this._collectStyleSheets();
     const styleBlock = styles
       ? (String(styles).trim().startsWith('<style') ? styles : `<style>${styles}</style>`)
       : '';
     this.shadowRoot.innerHTML = styleBlock + (html || '');
+    adoptGlobalComponentSheet(this.shadowRoot);
     const prev = _currentComponent;
     _currentComponent = this;
     try {
@@ -157,9 +162,10 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Subscribe to state keys (createState). When any change, run callback.
-   * @param {() => void} callback - e.g. () => this.rerender()
-   * @param {string[]} deps - State keys to watch (e.g. ['anotherStateKey'])
+   * Subscribe to state keys (createState). When any dep changes, re-renders this component.
+   * Optional callback runs on mount and after each dep change (side effects only — do not call rerender).
+   * @param {(() => void) | null | undefined} callback
+   * @param {string[]} deps - State keys to watch (e.g. ['my-state-key'])
    * @returns {() => void} unsubscribe
    */
   useEffect(callback, deps = []) {
@@ -168,6 +174,7 @@ export class SwitchComponent extends HTMLElement {
       try {
         return subscribeState(k, () => {
           if (typeof callback === 'function') callback();
+          this._runRenderAndMount();
         }, { immediate: false });
       } catch (_) {
         return () => {};
@@ -261,6 +268,15 @@ export class SwitchComponent extends HTMLElement {
     registerStaticState(symbol, identifier, { pending: false });
     if (!this.__staticStateKeys) this.__staticStateKeys = [];
     this.__staticStateKeys.push(symbol);
+  }
+
+  /**
+   * Create a static ref for imperative APIs (e.g. FlatList scroll methods).
+   * @param {string} [propName='ref']
+   * @param {'flatlist'} [kind='flatlist']
+   */
+  static useRef(propName = 'ref', kind = 'flatlist') {
+    return registerStaticRef(this, propName, createRef(kind));
   }
 
   static getScreenConfig() {
