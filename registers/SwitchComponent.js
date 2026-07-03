@@ -1,4 +1,4 @@
-import { subscribeState } from '../state-managers/index.js';
+import { subscribeState, getState } from '../state-managers/index.js';
 import { registerStaticState, getStatesForSymbol } from '../staticStateRegistry.js';
 import { createRef, registerStaticRef } from '../state-managers/index.js';
 import { adoptGlobalComponentSheet } from '../switch-components/globalStyles/index.js';
@@ -9,7 +9,8 @@ import { adoptGlobalComponentSheet } from '../switch-components/globalStyles/ind
  *
  * User defines static: name, path, title, layout, tag (optional)
  * User calls this.useState('counter') in static {} for full re-render on state change
- * User overrides: render(), styleSheet() (optional), onMount() (optional), onDestroy() (optional)
+ * User overrides: render(), effects() (optional), styleSheet() (optional), onMount() (optional), onDestroy() (optional)
+ * User calls useEffect(callback, deps) inside effects() — same as React hooks at the top of a function component
  * User calls: useEffect(callback, deps) for reactive updates or this.useEffect(...)
  * User calls: rerender() or renderToShadow() to re-render (not _renderToShadow)
  *
@@ -29,13 +30,18 @@ export class SwitchComponent extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._effectUnsubs = [];
+    this._effectStore = [];
+    this._effectHookIndex = 0;
+    this._effectDepUnsubs = new Map();
     this._stateUnsubs = [];
     this._destroyCallbacks = [];
+    this._staticStatesReady = false;
+    this._globalDepSnapshots = new Map();
   }
 
   connectedCallback() {
-    this._runRenderAndMount();
     this._setupStaticStates();
+    this._runRenderAndMount();
     if (typeof this.connected === 'function') {
       const prev = _currentComponent;
       _currentComponent = this;
@@ -52,6 +58,17 @@ export class SwitchComponent extends HTMLElement {
     }
     this._destroyCallbacks.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._destroyCallbacks = [];
+    this._effectStore.forEach((entry) => {
+      if (entry?.cleanup) {
+        try { entry.cleanup(); } catch (_) {}
+      }
+    });
+    this._effectStore = [];
+    this._effectHookIndex = 0;
+    this._effectDepUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
+    this._effectDepUnsubs.clear();
+    this._globalDepSnapshots.clear();
+    this._staticStatesReady = false;
     this._effectUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._effectUnsubs = [];
     this._stateUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
@@ -66,8 +83,6 @@ export class SwitchComponent extends HTMLElement {
 
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
-    this._effectUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
-    this._effectUnsubs = [];
     const html = typeof this.render === 'function' ? this.render() : '';
     const styles = this._collectStyleSheets();
     const styleBlock = styles
@@ -75,12 +90,69 @@ export class SwitchComponent extends HTMLElement {
       : '';
     this.shadowRoot.innerHTML = styleBlock + (html || '');
     adoptGlobalComponentSheet(this.shadowRoot);
+    this._runEffectPhase();
     const prev = _currentComponent;
     _currentComponent = this;
     try {
       if (typeof this.onMount === 'function') this.onMount();
     } finally {
       _currentComponent = prev;
+    }
+  }
+
+  _runEffectPhase() {
+    this._effectHookIndex = 0;
+    const prev = _currentComponent;
+    _currentComponent = this;
+    try {
+      if (typeof this.effects === 'function') this.effects();
+    } finally {
+      _currentComponent = prev;
+    }
+  }
+
+  _shallowEqualDeps(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+  }
+
+  _readDepValue(key) {
+    try {
+      return getState(key);
+    } catch (_) {
+      if (typeof globalStates !== 'undefined' && globalStates?.getState) {
+        return globalStates.getState(key);
+      }
+      return undefined;
+    }
+  }
+
+  _readDepValues(depKeys) {
+    return depKeys.map((k) => this._readDepValue(k));
+  }
+
+  _ensureEffectDepListeners(depKeys) {
+    for (const k of depKeys) {
+      if (this._effectDepUnsubs.has(k)) continue;
+
+      let unsub = null;
+      try {
+        unsub = subscribeState(k, () => this._runRenderAndMount(), { immediate: false });
+      } catch (_) {}
+
+      if (typeof unsub !== 'function' && typeof globalStates !== 'undefined' && globalStates?.subscribe) {
+        let lastVal = this._readDepValue(k);
+        this._globalDepSnapshots.set(k, lastVal);
+        unsub = globalStates.subscribe(() => {
+          const next = this._readDepValue(k);
+          if (next !== this._globalDepSnapshots.get(k)) {
+            this._globalDepSnapshots.set(k, next);
+            this._runRenderAndMount();
+          }
+        });
+      }
+
+      if (typeof unsub === 'function') this._effectDepUnsubs.set(k, unsub);
     }
   }
 
@@ -134,6 +206,9 @@ export class SwitchComponent extends HTMLElement {
   }
 
   _setupStaticStates() {
+    if (this._staticStatesReady) return;
+    this._staticStatesReady = true;
+
     const keys = this.constructor.__staticStateKeys || [];
     const states = keys.flatMap((sym) => getStatesForSymbol(sym));
     states.forEach((identifier) => {
@@ -162,29 +237,65 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Subscribe to state keys (createState). When any dep changes, re-renders this component.
-   * Optional callback runs on mount and after each dep change (side effects only — do not call rerender).
-   * @param {(() => void) | null | undefined} callback
-   * @param {string[]} deps - State keys to watch (e.g. ['my-state-key'])
-   * @returns {() => void} unsubscribe
+   * React-style effect hook. Call from effects(), not onMount.
+   * [] runs once on mount. [key-a, key-b] re-runs when those state values change.
+   * Return a cleanup function from the callback to run before re-run or unmount.
+   * Do not list a state in deps if the callback updates that same state — infinite loop.
+   * @param {(() => (() => void) | void) | null | undefined} callback
+   * @param {string[]} deps - State keys to watch
+   * @returns {() => void} manual cleanup (optional)
    */
   useEffect(callback, deps = []) {
-    if (!Array.isArray(deps) || deps.length === 0) return () => {};
-    const unsubs = deps.map((k) => {
-      try {
-        return subscribeState(k, () => {
-          if (typeof callback === 'function') callback();
-          this._runRenderAndMount();
-        }, { immediate: false });
-      } catch (_) {
-        return () => {};
-      }
-    });
-    if (typeof callback === 'function') callback();
-    const unsub = () => unsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
-    this._effectUnsubs.push(unsub);
-    return unsub;
+    if (!Array.isArray(deps)) return () => {};
+
+    if (callback == null) {
+      if (deps.length > 0) this._ensureEffectDepListeners(deps);
+      return () => {};
+    }
+
+    if (typeof callback !== 'function') return () => {};
+
+    const idx = this._effectHookIndex++;
+    const prev = this._effectStore[idx];
+    const depValues = this._readDepValues(deps);
+    const isEmpty = deps.length === 0;
+
+    if (isEmpty && prev?.ran) {
+      return typeof prev.cleanup === 'function' ? prev.cleanup : (() => {});
+    }
+
+    const shouldRun = !prev || (isEmpty && !prev.ran) || (!isEmpty && !this._shallowEqualDeps(prev.depValues, depValues));
+
+    if (!shouldRun) return () => {};
+
+    if (prev?.cleanup) {
+      try { prev.cleanup(); } catch (_) {}
+    }
+
+    let cleanup = null;
+    try {
+      const result = callback();
+      cleanup = typeof result === 'function' ? result : null;
+    } catch (_) {}
+
+    this._effectStore[idx] = {
+      depValues,
+      cleanup,
+      depKeys: [...deps],
+      ran: true
+    };
+
+    if (!isEmpty) this._ensureEffectDepListeners(deps);
+
+    return typeof cleanup === 'function' ? cleanup : (() => {});
   }
+
+  /**
+   * Override to register useEffect hooks (like React function component body).
+   * You can call useEffect multiple times — each call is one effect, in order.
+   * Runs after every render, before onMount.
+   */
+  effects() {}
 
   /**
    * Override to run after each render. Attach listeners here.
@@ -273,7 +384,7 @@ export class SwitchComponent extends HTMLElement {
   /**
    * Create a static ref for imperative APIs (e.g. FlatList scroll methods).
    * @param {string} [propName='ref']
-   * @param {'flatlist'} [kind='flatlist']
+   * @param {'flatlist'|'titlebar'} [kind='flatlist']
    */
   static useRef(propName = 'ref', kind = 'flatlist') {
     return registerStaticRef(this, propName, createRef(kind));

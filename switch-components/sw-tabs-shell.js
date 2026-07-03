@@ -70,10 +70,18 @@ export class TwTabsShell extends HTMLElement {
         :host {
           display: block;
           width: 100%;
-          height: 100dvh;
+          flex: 1;
+          min-height: 0;
+          overflow: hidden;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
+        [data-tabs-layout="1"] {
+          display: block;
+          width: 100%;
+          height: 100%;
+          min-height: 0;
+        }
       </style>
     `;
   }

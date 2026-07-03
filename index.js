@@ -62,9 +62,28 @@ function useState(identifier, callback) {
   return [value, unsub];
 }
 
-function useRef(target) {
-  const ref = createRef('flatlist');
+function isElectronTitleBarInstance(comp) {
+  let proto = comp?.constructor?.prototype;
+  while (proto) {
+    if (proto.constructor === ElectronTitleBar) return true;
+    proto = Object.getPrototypeOf(proto);
+  }
+  return false;
+}
+
+function isFlatListInstance(comp) {
+  let proto = comp?.constructor?.prototype;
+  while (proto) {
+    if (proto.constructor === FlatList) return true;
+    proto = Object.getPrototypeOf(proto);
+  }
+  return false;
+}
+
+function useRef(target, kind) {
   const comp = target || getCurrentComponent();
+  const resolvedKind = kind ?? (isElectronTitleBarInstance(comp) ? 'titlebar' : isFlatListInstance(comp) ? 'flatlist' : 'flatlist');
+  const ref = createRef(resolvedKind);
   bindRefTarget(ref, comp);
   if (comp) {
     comp._instanceRefs = comp._instanceRefs || [];

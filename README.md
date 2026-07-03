@@ -1,6 +1,6 @@
 # switch-framework
 
-Status: Under maintenance. Documentation is not ready yet.
+**Documentation:** [switch-framework-docs](https://github.com/Switcherfaiz/switch-framework-docs)
 
 switch-framework is a frontend framework designed to work together with `switch-framework-backend` to build:
 

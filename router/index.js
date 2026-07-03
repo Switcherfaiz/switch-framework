@@ -67,6 +67,29 @@ export function useRouteChangesSubscriber(callback) {
   return () => {};
 }
 
+/**
+ * Run callback when this screen/route is focused (active).
+ * Like React Navigation's focus listener — safe to call fetchData inside.
+ * @param {() => void} callback
+ * @param {string} [routeName] - Screen route name (e.g. screenName). Defaults to active route match.
+ * @returns {() => void} unsubscribe
+ */
+export function useScreenFocus(callback, routeName = '') {
+  if (typeof callback !== 'function') return () => {};
+
+  const runIfFocused = () => {
+    const active = getActiveRoute();
+    const target = routeName || active;
+    if (!target) return;
+    if (!routeName || active === routeName || active.endsWith(`/${routeName}`) || active.includes(routeName)) {
+      callback();
+    }
+  };
+
+  runIfFocused();
+  return useRouteChangesSubscriber(runIfFocused);
+}
+
 // Navigation functions that work with globalStates
 export function navigate(route, params = {}) {
   if (typeof globalStates !== 'undefined' && globalStates.getState) {

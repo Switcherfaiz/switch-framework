@@ -1,3 +1,8 @@
+import { ElectronTitleBar } from './components/ElectronTitleBar.js';
+import { FlatList } from './components/FlatList.js';
+import { registerElectronTitleBarClass } from './electron/titleBarRegistry.js';
+import { registerFlatListClass } from './components/flatListRegistry.js';
+
 export function assertExpoConventions({ tabsLayout, stackScreens, tabScreens }) {
   const errors = [];
 
@@ -43,7 +48,11 @@ export function ensureComponentDefined(Cls) {
  * No need to call registerComponent in each component file.
  */
 export function registerComponents(components = []) {
-  (Array.isArray(components) ? components : [components]).forEach(ensureComponentDefined);
+  (Array.isArray(components) ? components : [components]).forEach((Cls) => {
+    registerFlatListClass(Cls, FlatList);
+    registerElectronTitleBarClass(Cls, ElectronTitleBar);
+    ensureComponentDefined(Cls);
+  });
 }
 
 function normalizeScreen(screen) {
