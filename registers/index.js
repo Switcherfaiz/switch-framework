@@ -1,6 +1,14 @@
 import { registerFramework } from '../index.js';
 
+let _appStarted = false;
+
+/** True once startApp has run (manually or via auto-boot). */
+export function hasAppStarted() {
+  return _appStarted;
+}
+
 export async function startApp(layout, registers) {
+  _appStarted = true;
   registerFramework();
 
   const savedTheme = localStorage.getItem('theme');

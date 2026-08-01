@@ -144,48 +144,32 @@ export class SwitchStateManager {
     return `switchstate:${identifier}`;
   }
 
-  /** @param {'flatlist'|'titlebar'} [kind='flatlist'] */
+  /** @param {'flatlist'} [kind='flatlist'] */
   createRef(kind = 'flatlist') {
     const ref = {
       __switchRef: true,
       kind,
-      _target: null
-    };
+      _target: null,
 
-    if (kind === 'titlebar') {
-      ref.minimize = async () => ref._target?.minimize?.();
-      ref.maximize = async () => ref._target?.maximize?.();
-      ref.restore = async () => ref._target?.restore?.();
-      ref.close = () => ref._target?.close?.();
-      ref.toggleMaximize = async () => ref._target?.toggleMaximize?.();
-      ref.refreshWindowState = async () => ref._target?.refreshWindowState?.();
-      ref.getWindowState = () => ref._target?.getWindowState?.() ?? 'normal';
-      ref.show = () => ref._target?.show?.();
-      ref.hide = () => ref._target?.hide?.();
-      ref.setVisible = (visible) => ref._target?.setVisible?.(visible);
-      ref.getVisible = () => ref._target?.getVisible?.() ?? true;
-      ref.toggleVisible = () => ref._target?.toggleVisible?.();
-      return ref;
-    }
+      scrollToIndex({ index, animated = true, viewOffset = 0, viewPosition } = {}) {
+        ref._target?.scrollToIndex?.({ index, animated, viewOffset, viewPosition });
+      },
 
-    ref.scrollToIndex = ({ index, animated = true, viewOffset = 0, viewPosition } = {}) => {
-      ref._target?.scrollToIndex?.({ index, animated, viewOffset, viewPosition });
-    };
+      scrollToEnd({ animated = true } = {}) {
+        ref._target?.scrollToEnd?.({ animated });
+      },
 
-    ref.scrollToEnd = ({ animated = true } = {}) => {
-      ref._target?.scrollToEnd?.({ animated });
-    };
+      scrollToOffset({ offset, animated = true } = {}) {
+        ref._target?.scrollToOffset?.({ offset, animated });
+      },
 
-    ref.scrollToOffset = ({ offset, animated = true } = {}) => {
-      ref._target?.scrollToOffset?.({ offset, animated });
-    };
+      scrollBy({ x = 0, y = 0, animated = true } = {}) {
+        ref._target?.scrollBy?.({ x, y, animated });
+      },
 
-    ref.scrollBy = ({ x = 0, y = 0, animated = true } = {}) => {
-      ref._target?.scrollBy?.({ x, y, animated });
-    };
-
-    ref.flashScrollIndicators = () => {
-      ref._target?.flashScrollIndicators?.();
+      flashScrollIndicators() {
+        ref._target?.flashScrollIndicators?.();
+      }
     };
 
     return ref;

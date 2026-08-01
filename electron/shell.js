@@ -1,5 +1,4 @@
-import { useRouteChangesSubscriber } from '../router/index.js';
-import { getRegisteredTitleBarTag, getDefaultTitleBarTag } from './titleBarRegistry.js';
+import { getActiveRoute, useRouteChangesSubscriber } from '../router/index.js';
 
 export const DEFAULT_TITLEBAR_HEIGHT_PX = 32;
 const ELECTRON_SHELL_STYLE_ID = 'sw-electron-shell-styles';
@@ -44,29 +43,50 @@ export function applyElectronShellLayout(heightPx = DEFAULT_TITLEBAR_HEIGHT_PX) 
 }
 
 /**
- * Applies document-level Electron shell layout (CSS vars, host class).
+ * Resolves which shell title bar should be visible (`tabs` or `stack`).
+ * Uses `activeLayout` from globalStates when route is omitted.
  */
+export function getElectronTitleBarHost(route) {
+  if (typeof globalStates !== 'undefined' && globalStates.getState) {
+    const activeLayout = globalStates.getState('activeLayout');
+    if (activeLayout === 'tabs' || activeLayout === 'stack') return activeLayout;
+  }
+  const activeRoute = route ?? getActiveRoute?.() ?? '';
+  if (!activeRoute) return 'stack';
+  const defined = globalStates?.getState?.('definedRoutes') || [];
+  const match = defined.find((r) => r.route === activeRoute);
+  return match?.layout === 'tabs' ? 'tabs' : 'stack';
+}
+
+/** Shows the tabs-shell title bar on tab layout, stack-shell title bar on stack layout. */
 export function syncElectronTitleBarHost(route) {
   if (!isElectronShell()) return;
   applyElectronShellLayout();
+  const host = getElectronTitleBarHost(route);
+  document.documentElement.dataset.electronTitlebar = host;
 }
 
 /**
- * Returns title bar markup for manual placement (optional; app shell embeds one by default).
+ * Returns title bar markup for manual placement (optional; shells embed it by default).
+ * @param {'stack'|'tabs'} host
  */
-export function electronTitleBarHtml() {
+export function electronTitleBarHtml(host = 'stack') {
   if (!isElectronShell()) return '';
   const tag = getElectronTitleBarTag();
-  return `<${tag} id="sw-app-titlebar"></${tag}>`;
+  return `<${tag} data-host="${host}"></${tag}>`;
 }
 
 /** Custom element tag for the title bar (`sw-electron-titlebar` by default). */
 export function getElectronTitleBarTag() {
-  return getRegisteredTitleBarTag() || getDefaultTitleBarTag();
+  if (typeof globalStates !== 'undefined' && globalStates.getState) {
+    const tag = globalStates.getState('electronTitleBarTag');
+    if (tag) return tag;
+  }
+  return 'sw-electron-titlebar';
 }
 
 /**
- * Subscribe to route / global state changes and keep Electron shell layout in sync.
+ * Subscribe to route / global state changes and keep title bar host visibility in sync.
  * @returns {() => void} unsubscribe
  */
 export function installElectronTitleBarRouteSync() {

@@ -1,5 +1,8 @@
 import { SwitchComponent } from './SwitchComponent.js';
 import { registerScreens, ensureComponentDefined } from '../registerScreens.js';
+import { startApp } from './index.js';
+import { initTheme } from '../themes/index.js';
+
 export class StackLayout extends SwitchComponent {
   static tag = 'sw-stack-layout';
   static stackScreens = [];
@@ -29,6 +32,22 @@ export class StackLayout extends SwitchComponent {
       stackrender:this.render(),
       stackstyleSheet:this.styleSheet()
     };
+  }
+
+  /**
+   * Boot the whole app from the layout class. Initializes the theme,
+   * self-registers the layout, tabs layout and all screens, and starts
+   * the app — no startApp/initTheme/getAppLayout calls needed in user code.
+   *
+   * Usage in index.js:
+   *   import { MyStackLayout } from './app/_layout.js';
+   *   MyStackLayout.startApp();
+   *
+   * @param {Function|string} [registers] - optional registers hook (same as startApp's second arg)
+   */
+  static startApp(registers) {
+    initTheme();
+    return startApp(this.getAppLayout(), registers);
   }
 
   static getAppLayout(validate = true) {

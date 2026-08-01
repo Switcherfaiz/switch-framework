@@ -1,15 +1,21 @@
-import { SwitchComponent } from '../registers/SwitchComponent.js';
-import { getState, subscribeState, createState, bindInstanceRefs } from '../state-managers/index.js';
+import { SwitchComponent, getState, subscribeState } from '../index.js';
+import { bindStaticRefs, bindInstanceRefs } from '../state-managers/index.js';
 
 /**
  * FlatList – React Native-inspired list component for Switch Framework
  *
- * Base setup runs automatically (no super.onMount()). Extend, add static useState for
- * state keys, use useRef(this) in onMount for scroll APIs, getState in render/renderItem.
+ * Styling:
+ * - Host (global CSS): `my-flat-list { }` — targets the custom element (:host)
+ * - Extended styleSheet(): use `flatlist` as the inner scope alias, e.g.
+ *   `flatlist::-webkit-scrollbar { width: 6px; }` or `flatlist .flat-list-content { }`
+ * - CSS variables on `:host` in styleSheet inherit into shadow children
+ *
+ * USER OVERRIDABLE METHODS:
+ * - renderItem, renderLoader, renderEmpty, renderHeader, renderFooter, renderSeparator, renderError
+ * - keyExtractor, onEndReached, onRefresh, onScroll, getItemLayout, styleSheet, render
  */
 
 const FLATLIST_SCOPE = 'flatlist';
-const _flatListStatesRegistered = new WeakSet();
 
 export class FlatList extends SwitchComponent {
   static tag = 'sw-flat-list';
@@ -35,44 +41,6 @@ export class FlatList extends SwitchComponent {
   static loadingState = '';
   static refreshingState = '';
   static errorState = '';
-  static scrollToEndActionKey = '';
-  static scrollToIndexActionKey = '';
-  static flashScrollActionKey = '';
-
-  /** Creates default data, status, and scroll action states for a list class. */
-  static registerStates(Cls) {
-    if (!Cls?.tag || _flatListStatesRegistered.has(Cls)) return;
-    _flatListStatesRegistered.add(Cls);
-
-    const prefix = Cls.tag;
-    if (!Cls.dataState) Cls.dataState = `${prefix}-data`;
-    if (!Cls.loadingState) Cls.loadingState = `${prefix}-loading`;
-    if (!Cls.refreshingState) Cls.refreshingState = `${prefix}-refreshing`;
-    if (!Cls.errorState) Cls.errorState = `${prefix}-error`;
-
-    Cls.scrollToEndActionKey = `${prefix}-action-scroll-end`;
-    Cls.scrollToIndexActionKey = `${prefix}-action-scroll-index`;
-    Cls.flashScrollActionKey = `${prefix}-action-flash-scroll`;
-
-    const ensure = (key, initial) => {
-      try {
-        createState(key, initial);
-      } catch (_) {}
-    };
-
-    ensure(Cls.dataState, []);
-    ensure(Cls.loadingState, false);
-    ensure(Cls.refreshingState, false);
-    ensure(Cls.errorState, null);
-    ensure(Cls.scrollToEndActionKey, 0);
-    ensure(Cls.scrollToIndexActionKey, null);
-    ensure(Cls.flashScrollActionKey, 0);
-  }
-
-  static {
-    FlatList.registerStates(FlatList);
-    FlatList.useState('sw-flat-list-data');
-  }
 
   /** Rewrites `flatlist::…` / `flatlist .class` to `.flatlist…` in extended styleSheets */
   static processStyleSheet(css) {
@@ -93,53 +61,6 @@ export class FlatList extends SwitchComponent {
     this._renderedItems = [];
     this._isMounted = false;
     this._visibleUpdateRaf = null;
-    this._flatListInit = false;
-  }
-
-  connectedCallback() {
-    this.constructor.registerStates(this.constructor);
-    if (!this._flatListInit) {
-      this._flatListInit = true;
-      this._subscribeToStates();
-      this._watchScrollActionStates();
-    }
-    super.connectedCallback();
-  }
-
-  _runRenderAndMount() {
-    SwitchComponent.prototype._runRenderAndMount.call(this);
-    bindInstanceRefs(this);
-    this._bindListDom();
-  }
-
-  _bindListDom() {
-    this._isMounted = true;
-    this._containerRef = this.select('.flat-list-container');
-
-    if (this._containerRef) {
-      this._containerRef.addEventListener('scroll', (e) => this.onScroll(e));
-    }
-
-    const items = this.selectAll('.flat-list-item-wrapper');
-    this._itemsRef.clear();
-    items.forEach((item) => {
-      const key = item.dataset.key;
-      if (key) this._itemsRef.set(key, item);
-    });
-
-    this._syncHorizontalSlideWidths();
-    requestAnimationFrame(() => this._syncHorizontalSlideWidths());
-
-    if (this._isHorizontal() && this.constructor.horizontalItemWidth === '100%' && this._containerRef && typeof ResizeObserver !== 'undefined') {
-      if (!this._resizeOb) {
-        this._resizeOb = new ResizeObserver(() => this._syncHorizontalSlideWidths());
-        this._resizeOb.observe(this._containerRef);
-        this.addOnDestroy(() => {
-          this._resizeOb?.disconnect();
-          this._resizeOb = null;
-        });
-      }
-    }
   }
 
   renderItem({ item, index, separators }) {
@@ -385,37 +306,35 @@ export class FlatList extends SwitchComponent {
     }
   }
 
-  _watchScrollActionStates() {
-    const C = this.constructor;
+  onMount() {
+    this._isMounted = true;
+    this._containerRef = this.select('.flat-list-container');
 
-    const watchCounter = (key, run) => {
-      if (!key) return;
-      try {
-        let prev = getState(key);
-        const unsub = subscribeState(key, (val) => {
-          if (Object.is(val, prev)) return;
-          prev = val;
-          run(val);
-        }, { immediate: false });
-        this._stateUnsubs.push(unsub);
-      } catch (_) {}
-    };
-
-    watchCounter(C.scrollToEndActionKey, () => this.scrollToEnd({ animated: true }));
-
-    watchCounter(C.flashScrollActionKey, () => this.flashScrollIndicators());
-
-    if (C.scrollToIndexActionKey) {
-      try {
-        let prev = getState(C.scrollToIndexActionKey);
-        const unsub = subscribeState(C.scrollToIndexActionKey, (val) => {
-          if (val == null || Object.is(val, prev)) return;
-          prev = val;
-          if (typeof val === 'object') this.scrollToIndex(val);
-        }, { immediate: false });
-        this._stateUnsubs.push(unsub);
-      } catch (_) {}
+    if (this._containerRef) {
+      this._containerRef.addEventListener('scroll', (e) => this.onScroll(e));
     }
+
+    const items = this.selectAll('.flat-list-item-wrapper');
+    items.forEach((item) => {
+      const key = item.dataset.key;
+      if (key) this._itemsRef.set(key, item);
+    });
+
+    bindStaticRefs(this);
+    bindInstanceRefs(this);
+    this._syncHorizontalSlideWidths();
+    requestAnimationFrame(() => this._syncHorizontalSlideWidths());
+
+    if (this._isHorizontal() && this.constructor.horizontalItemWidth === '100%' && this._containerRef && typeof ResizeObserver !== 'undefined') {
+      this._resizeOb = new ResizeObserver(() => this._syncHorizontalSlideWidths());
+      this._resizeOb.observe(this._containerRef);
+      this.addOnDestroy(() => {
+        this._resizeOb?.disconnect();
+        this._resizeOb = null;
+      });
+    }
+
+    this._subscribeToStates();
   }
 
   _syncHorizontalSlideWidths() {
@@ -471,7 +390,6 @@ export class FlatList extends SwitchComponent {
 
   onDestroy() {
     this._isMounted = false;
-    this._flatListInit = false;
     if (this._visibleUpdateRaf) {
       cancelAnimationFrame(this._visibleUpdateRaf);
       this._visibleUpdateRaf = null;

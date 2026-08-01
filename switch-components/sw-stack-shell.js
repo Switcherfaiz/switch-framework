@@ -47,10 +47,14 @@ export class TwStackShell extends HTMLElement {
     return `
       <style>
         :host {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
           display: block;
           width: 100%;
-          flex: 1;
-          min-height: 0;
+          height: 100dvh;
           overflow: hidden;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }

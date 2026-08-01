@@ -14,8 +14,7 @@ export class TwAppShell extends HTMLElement {
     this.stackrender = stackrender || '';
     this.stackstyleSheet = stackstyleSheet || '';
     this.render();
-    const layoutType = globalStates?.getState?.('activeLayout') || 'stack';
-    this.setLayout(layoutType);
+    this.setLayout('stack');
   }
 
   getContentContainer() {
@@ -40,8 +39,11 @@ export class TwAppShell extends HTMLElement {
     return this.shadowRoot.querySelector('#stack-contents');
   }
 
-  getTitleBarElement() {
-    return this.shadowRoot.querySelector('#sw-app-titlebar');
+  _syncTitleBars(layoutType = 'stack') {
+    const tabsBar = this.shadowRoot.querySelector('[data-host="tabs"]');
+    const stackBar = this.shadowRoot.querySelector('[data-host="stack"]');
+    if (tabsBar) tabsBar.hidden = layoutType !== 'tabs';
+    if (stackBar) stackBar.hidden = layoutType !== 'stack';
   }
 
   setLayout(layoutType = 'stack') {
@@ -58,6 +60,8 @@ export class TwAppShell extends HTMLElement {
     if (layoutContent) {
       layoutContent.style.display = layoutType === 'tabs' ? 'none' : 'block';
     }
+
+    this._syncTitleBars(layoutType);
   }
 
   render() {
@@ -65,7 +69,8 @@ export class TwAppShell extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       ${this.styleSheet()}
-      <${titleBarTag} id="sw-app-titlebar"></${titleBarTag}>
+      <${titleBarTag} data-host="tabs"></${titleBarTag}>
+      <${titleBarTag} data-host="stack"></${titleBarTag}>
       <sw-tabs-shell style="display:none"></sw-tabs-shell>
       <sw-stack-shell></sw-stack-shell>
       <div class="stack-contents" id="stack-contents">${this.stackrender}</div>
@@ -80,25 +85,18 @@ export class TwAppShell extends HTMLElement {
       <style>
         ${userCss}
         :host {
-          display: flex;
-          flex-direction: column;
+          display: block;
           width: 100%;
-          height: 100dvh;
           min-height: 100dvh;
-          overflow: hidden;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
-        :host > #sw-app-titlebar {
-          flex-shrink: 0;
-        }
-        :host > #sw-app-titlebar[hidden] {
-          display: none !important;
-        }
-        sw-tabs-shell,
-        sw-stack-shell {
-          flex: 1;
-          min-height: 0;
+        sw-electron-titlebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 10001;
         }
         .stack-contents {
           position: fixed;

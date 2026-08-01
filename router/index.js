@@ -1,5 +1,5 @@
 import { Router } from './router.js';
-import { createGlobalStates, encodeData, decodeData } from '../helpers/index.js';
+import { createGlobalStates, encodeData, decodeData, createProps } from '../helpers/index.js';
 
 export function Stack(config = {}) {
   return {
@@ -65,29 +65,6 @@ export function useRouteChangesSubscriber(callback) {
     return globalStates.subscribe(callback);
   }
   return () => {};
-}
-
-/**
- * Run callback when this screen/route is focused (active).
- * Like React Navigation's focus listener — safe to call fetchData inside.
- * @param {() => void} callback
- * @param {string} [routeName] - Screen route name (e.g. screenName). Defaults to active route match.
- * @returns {() => void} unsubscribe
- */
-export function useScreenFocus(callback, routeName = '') {
-  if (typeof callback !== 'function') return () => {};
-
-  const runIfFocused = () => {
-    const active = getActiveRoute();
-    const target = routeName || active;
-    if (!target) return;
-    if (!routeName || active === routeName || active.endsWith(`/${routeName}`) || active.includes(routeName)) {
-      callback();
-    }
-  };
-
-  runIfFocused();
-  return useRouteChangesSubscriber(runIfFocused);
 }
 
 // Navigation functions that work with globalStates
@@ -204,6 +181,7 @@ export {
   Router,
   createGlobalStates,
   encodeData,
-  decodeData
+  decodeData,
+  createProps
 };
 
