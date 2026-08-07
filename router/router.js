@@ -118,41 +118,64 @@ export class Router {
   findRoute(routeName, params = {}) {
     const normalized = routeName.startsWith('/') ? routeName.substring(1) : routeName;
     
-    // First check for exact static match
+    // PRIORITY 1: Check for EXACT static match first (highest priority)
+    // This ensures /home matches /home, not /home/:id
     if (this.routes[normalized]) {
       const route = this.routes[normalized];
       const pathTemplate = route.path || '';
-      // If route path has required params (:param) and normalized has fewer segments, don't match
-      // e.g. /docs with no param should not match route "docs" with path /docs/:id
-      if (pathTemplate.includes(':')) {
-        const pathSegments = pathTemplate.replace(/^\//, '').split('/');
-        const routeSegments = normalized.split('/');
-        if (routeSegments.length < pathSegments.length) {
-          // Fall through to dynamic/not-found - don't match incomplete path
-        } else {
-          return { ...route, render: () => route.render(params) };
-        }
-      } else {
+      
+      // If it's a pure static route (no params), use it immediately
+      if (!pathTemplate.includes(':')) {
         return { ...route, render: () => route.render(params) };
       }
     }
 
-    // Then check for dynamic routes - match by path template when path contains :
+    // PRIORITY 2: Check for exact matches in route paths (e.g., path: '/home' matches 'home')
+    const exactMatches = Object.entries(this.routes).filter(([, route]) => {
+      const path = (route.path || '').replace(/^\//, '');
+      return path === normalized && !path.includes(':');
+    });
+    
+    if (exactMatches.length > 0) {
+      const [, route] = exactMatches[0];
+      return { ...route, render: () => route.render(params) };
+    }
+
+    // PRIORITY 3: Dynamic routes (routes with parameters)
     const dynamicRoutes = Object.entries(this.routes).filter(
       ([, route]) => (route.path || '').includes(':')
     );
 
+    // Sort by specificity: fewer params = more specific, static segments count more
     dynamicRoutes.sort(([, routeA], [, routeB]) => {
-      const aDynamicCount = (routeA.path || '').split(':').length - 1;
-      const bDynamicCount = (routeB.path || '').split(':').length - 1;
-      return aDynamicCount - bDynamicCount;
+      const aPath = routeA.path || '';
+      const bPath = routeB.path || '';
+      
+      const aSegments = aPath.replace(/^\//, '').split('/');
+      const bSegments = bPath.replace(/^\//, '').split('/');
+      
+      // Count static vs dynamic segments
+      const aStatic = aSegments.filter(seg => !seg.startsWith(':')).length;
+      const bStatic = bSegments.filter(seg => !seg.startsWith(':')).length;
+      
+      // More static segments = more specific (higher priority)
+      if (aStatic !== bStatic) return bStatic - aStatic;
+      
+      // Fewer total segments = more specific
+      return aSegments.length - bSegments.length;
     });
 
+    // Try to match dynamic routes
+    const routeSegments = normalized.split('/');
+    
     for (const [routeKey, route] of dynamicRoutes) {
       const pathTemplate = route.path || '/' + routeKey;
       const patternSegments = pathTemplate.replace(/^\//, '').split('/');
-      const routeSegments = normalized.split('/');
-      if (patternSegments.length !== routeSegments.length) continue;
+      
+      // Must have same number of segments
+      if (patternSegments.length !== routeSegments.length) {
+        continue;
+      }
 
       const dynamicParams = {};
       let isMatch = true;
@@ -160,9 +183,13 @@ export class Router {
       for (let i = 0; i < patternSegments.length; i++) {
         const patternSegment = patternSegments[i];
         const routeSegment = routeSegments[i];
+        
         if (patternSegment.startsWith(':')) {
-          dynamicParams[patternSegment.slice(1)] = routeSegment;
+          // Extract parameter name and value
+          const paramName = patternSegment.slice(1);
+          dynamicParams[paramName] = routeSegment;
         } else if (patternSegment !== routeSegment) {
+          // Static segment must match exactly
           isMatch = false;
           break;
         }
@@ -174,7 +201,7 @@ export class Router {
       }
     }
 
-    // Fallback: try matching a parent prefix route (e.g. "docs/router" -> "docs")
+    // PRIORITY 4: Fallback - try matching a parent prefix route
     const segments = normalized.split('/');
     if (segments.length > 1) {
       for (let i = segments.length - 1; i >= 1; i--) {

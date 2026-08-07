@@ -39,7 +39,6 @@ import {
 } from './state-managers/index.js';
 export { startApp } from './registers/index.js';
 export { ensureComponentDefined as registerComponent } from './registerScreens.js';
-import { hasAppStarted } from './registers/index.js';
 
 const useEffect = (function createUseEffect() {
   return function useEffect(callback, deps = []) {
@@ -74,44 +73,6 @@ function useRef(target) {
   }
   return ref;
 }
-
-/**
- * Auto-boot by convention: when a page contains <sw-app-initial> and the app's
- * /app/_layout.js exports a StackLayout subclass (and no default export), the
- * framework starts the app itself — no startApp/initTheme calls in user code.
- *
- * Apps that export a default layout config (export default X.getAppLayout())
- * keep full manual control and are never auto-started.
- */
-let _autoBootAttempted = false;
-function autoStartFromConventions() {
-  if (_autoBootAttempted || typeof document === 'undefined') return;
-  _autoBootAttempted = true;
-
-  const run = async () => {
-    try {
-      if (hasAppStarted()) return;
-      if (!document.querySelector('sw-app-initial')) return;
-      const mod = await import('/app/_layout.js');
-      if (hasAppStarted()) return;
-      // A default export means the app boots manually (old style) — skip.
-      if (mod.default != null) return;
-      const Layout = Object.values(mod).find(
-        (v) => typeof v === 'function' && v !== StackLayout && v.prototype instanceof StackLayout
-      );
-      if (Layout && typeof Layout.startApp === 'function') Layout.startApp();
-    } catch (_) {
-      // No conventional /app/_layout.js — the app boots manually via startApp.
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => run(), { once: true });
-  } else {
-    queueMicrotask(run);
-  }
-}
-autoStartFromConventions();
 
 export function registerFramework() {
   if (!customElements.get('sw-app-initial')) customElements.define('sw-app-initial', TwAppInitial);

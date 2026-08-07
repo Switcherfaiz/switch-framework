@@ -1,6 +1,6 @@
 import { SwitchComponent } from './SwitchComponent.js';
 import { registerScreens, ensureComponentDefined } from '../registerScreens.js';
-import { startApp } from './index.js';
+import { startApp, hasAppStarted } from './index.js';
 import { initTheme } from '../themes/index.js';
 
 export class StackLayout extends SwitchComponent {
@@ -35,13 +35,9 @@ export class StackLayout extends SwitchComponent {
   }
 
   /**
-   * Boot the whole app from the layout class. Initializes the theme,
-   * self-registers the layout, tabs layout and all screens, and starts
-   * the app — no startApp/initTheme/getAppLayout calls needed in user code.
-   *
-   * Usage in index.js:
-   *   import { MyStackLayout } from './app/_layout.js';
-   *   MyStackLayout.startApp();
+   * Boot the whole app from the layout class. Called automatically by the
+   * framework when index.html includes <sw-app-initial> and loads app/_layout.js.
+   * Manual use is only needed for custom entry setups.
    *
    * @param {Function|string} [registers] - optional registers hook (same as startApp's second arg)
    */
@@ -49,6 +45,53 @@ export class StackLayout extends SwitchComponent {
     initTheme();
     return startApp(this.getAppLayout(), registers);
   }
+
+  /** Find the user's StackLayout subclass exported from a layout module. */
+  static findLayoutClass(mod) {
+    if (!mod || mod.default != null) return null;
+    return Object.values(mod).find(
+      (v) => typeof v === 'function' && v !== StackLayout && v.prototype instanceof StackLayout
+    ) || null;
+  }
+
+  /** Resolve the layout module URL from index.html script tags. */
+  static findLayoutModuleUrl() {
+    if (typeof document === 'undefined') return '/app/_layout.js';
+    const scripts = [...document.querySelectorAll('script[type="module"][src]')];
+    const match = scripts.find((s) => /\/app\/_layout\.js(\?|#|$)/.test(s.src));
+    return match?.src || '/app/_layout.js';
+  }
+
+  /** Auto-start the app when <sw-app-initial> is present and a StackLayout subclass exists. */
+  static async autoBootFromPage() {
+    if (hasAppStarted()) return;
+    if (typeof document === 'undefined') return;
+    if (!document.querySelector('sw-app-initial')) return;
+
+    try {
+      const mod = await import(StackLayout.findLayoutModuleUrl());
+      if (hasAppStarted()) return;
+
+      const Layout = StackLayout.findLayoutClass(mod);
+      if (Layout) Layout.startApp();
+    } catch (err) {
+      console.error('[switch-framework] Failed to auto-start app:', err);
+    }
+  }
+
+  static scheduleAutoBoot() {
+    if (StackLayout._autoBootScheduled || typeof document === 'undefined') return;
+    StackLayout._autoBootScheduled = true;
+
+    const run = () => StackLayout.autoBootFromPage();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run, { once: true });
+    } else {
+      queueMicrotask(run);
+    }
+  }
+
+  static _autoBootScheduled = false;
 
   static getAppLayout(validate = true) {
 
@@ -89,3 +132,5 @@ export class StackLayout extends SwitchComponent {
     };
   }
 }
+
+StackLayout.scheduleAutoBoot();

@@ -2,11 +2,15 @@ export function assertExpoConventions({ tabsLayout, stackScreens, tabScreens }) 
   const errors = [];
 
   (stackScreens || []).forEach((s) => {
-    if (s?.layout && s.layout !== 'stack') errors.push(`Stack screen "${s.name}" must have layout "stack".`);
+    if (s?.layout && s.layout !== 'stack') {
+      errors.push(`Stack screen "${s.name}" has layout "${s.layout}" but is registered in stackScreens.`);
+    }
   });
 
   (tabScreens || []).forEach((s) => {
-    if (s?.layout && s.layout !== 'tabs') errors.push(`Tab screen "${s.name}" must have layout "tabs".`);
+    if (s?.layout && s.layout !== 'tabs') {
+      errors.push(`Tab screen "${s.name}" has layout "${s.layout}" but is registered in TabLayout.screens.`);
+    }
   });
 
   const tabs = Array.isArray(tabsLayout?.tabs) ? tabsLayout.tabs : [];
@@ -49,7 +53,9 @@ export function registerComponents(components = []) {
 function normalizeScreen(screen) {
   if (screen && typeof screen.getScreenConfig === 'function') {
     ensureComponentDefined(screen);
-    return { ...screen.getScreenConfig(), layout: screen.layout ?? screen.getScreenConfig().layout };
+    const cfg = screen.getScreenConfig();
+    if (screen.layout && !cfg.layout) cfg.layout = screen.layout;
+    return cfg;
   }
   return screen;
 }

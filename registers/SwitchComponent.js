@@ -8,7 +8,9 @@ import { decodeData } from '../helpers/codecs/codec.js';
  * SwitchComponent – base class for screens and components.
  * Extends HTMLElement with shadow DOM, render lifecycle, and useEffect for state-driven updates.
  *
- * User defines static: name, path, title, layout, tag (optional)
+ * User defines static: name, path, title, tag (optional)
+ * Optional static layout = 'stack' | 'tabs' — if omitted, inferred from
+ * stackScreens (stack) or TabLayout.screens (tabs).
  * User calls this.useState('counter') in static {} for full re-render on state change
  * User overrides: render(), styleSheet() (optional), onMount() (optional), onDestroy() (optional)
  * User calls: useEffect(callback, deps) for reactive updates or this.useEffect(...)
@@ -22,7 +24,6 @@ export class SwitchComponent extends HTMLElement {
   static screenName = '';
   static path = '/';
   static title = '';
-  static layout = 'stack';
   static tag = '';
   static props = '';
 
@@ -325,9 +326,9 @@ export class SwitchComponent extends HTMLElement {
       name,
       path: this.path || (name ? `/${name}` : '/'),
       title: this.title || name,
-      tag,
-      layout: this.layout || 'stack'
+      tag
     };
+    if (this.layout) config.layout = this.layout;
     if (this.props) config.props = this.props;
     return config;
   }
