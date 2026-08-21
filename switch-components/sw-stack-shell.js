@@ -60,10 +60,10 @@ export class TwStackShell extends HTMLElement {
         }
         * { box-sizing: border-box; font-family: inherit; }
         #content {
+          position: relative;
           background: transparent;
           height: 100%;
-          overflow: auto;
-          overflow-x: hidden;
+          overflow: hidden;
         }
       </style>
     `;

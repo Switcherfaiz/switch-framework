@@ -1,3 +1,5 @@
+import { encodeData } from '../helpers/index.js';
+
 export class Router {
   constructor(routes = {}, updateTitleCallback = null, containerEl = null, onRouteChange = null, options = {}) {
     this.routes = routes;
@@ -16,6 +18,8 @@ export class Router {
     this.start = this.start.bind(this);
 
     this._lockedRoute = null;
+    // Cache of rendered screen elements: key = normalizedRoute, value = { element, params }
+    this._screenCache = new Map();
 
     window.addEventListener('popstate', this.handlePopState);
   }
@@ -60,7 +64,7 @@ export class Router {
         const container = containerFromCallback || this.containerEl;
         const screenContent = typeof route.render === 'function' ? route.render(effectiveParams) : route.render;
         if (this.updateTitleCallback) this.updateTitleCallback(notFoundKey);
-        if (container) container.innerHTML = screenContent;
+        if (container) this._showScreen(container, notFoundKey, screenContent, effectiveParams);
         const baseTitle = route.title || 'Not Found';
         document.title = this.titlePrefix ? (baseTitle ? `${this.titlePrefix} - ${baseTitle}` : this.titlePrefix) : baseTitle;
         return routeInfo;
@@ -77,7 +81,7 @@ export class Router {
 
     const containerFromCallback = typeof this.onRouteChange === 'function' ? this.onRouteChange(routeInfo) : null;
     const container = containerFromCallback || this.containerEl;
-    if (container) container.innerHTML = `<sw-not-found-screen></sw-not-found-screen>`;
+    if (container) this._showScreen(container, '+not-found', `<sw-not-found-screen></sw-not-found-screen>`, routeInfo.params);
     document.title = this.titlePrefix ? `${this.titlePrefix} - Not Found` : 'Not Found';
     return routeInfo;
   }
@@ -229,6 +233,101 @@ export class Router {
     return path.startsWith('/') ? path : '/' + path;
   }
 
+  /**
+   * Keep screens mounted. Each route gets its own scroll slot so going back
+   * restores position (React Navigation / Expo Router style, not React web).
+   */
+  _prepareScreenHost(container) {
+    if (!container || container._swScreenHost) return;
+    container._swScreenHost = true;
+    const style = container.style;
+    if (!style.position || style.position === 'static') style.position = 'relative';
+    style.overflow = 'hidden';
+    if (!style.height && !style.minHeight) style.height = '100%';
+  }
+
+  _styleScreenSlot(slot) {
+    slot.style.cssText = [
+      'position:absolute',
+      'inset:0',
+      'width:100%',
+      'height:100%',
+      'overflow:auto',
+      'overflow-x:hidden',
+      '-webkit-overflow-scrolling:touch',
+      'overscroll-behavior:contain',
+      'box-sizing:border-box',
+      'padding-bottom:var(--sw-screen-pad-bottom, 0px)'
+    ].join(';');
+  }
+
+  _hideScreenSlot(slot, cached) {
+    if (!slot) return;
+    if (cached) cached.scrollTop = slot.scrollTop;
+    slot.setAttribute('data-sw-active', 'false');
+    slot.setAttribute('aria-hidden', 'true');
+    slot.inert = true;
+    slot.style.visibility = 'hidden';
+    slot.style.pointerEvents = 'none';
+    slot.style.zIndex = '0';
+  }
+
+  _showScreenSlot(slot, cached) {
+    if (!slot) return;
+    slot.setAttribute('data-sw-active', 'true');
+    slot.removeAttribute('aria-hidden');
+    slot.inert = false;
+    slot.style.visibility = 'visible';
+    slot.style.pointerEvents = 'auto';
+    slot.style.zIndex = '1';
+    const top = cached?.scrollTop || 0;
+    requestAnimationFrame(() => {
+      slot.scrollTop = top;
+    });
+  }
+
+  _showScreen(container, cacheKey, screenContent, params = {}) {
+    if (!container) return;
+    this._prepareScreenHost(container);
+
+    Array.from(container.children).forEach((child) => {
+      const cachedChild = [...this._screenCache.values()].find((entry) => entry.slot === child);
+      this._hideScreenSlot(child, cachedChild);
+    });
+
+    const cached = this._screenCache.get(cacheKey);
+    if (cached?.slot && container.contains(cached.slot)) {
+      this._showScreenSlot(cached.slot, cached);
+      const el = cached.element;
+      if (el?.setAttribute && JSON.stringify(cached.params) !== JSON.stringify(params)) {
+        try {
+          if (el.hasAttribute('data') && typeof encodeData === 'function') {
+            el.setAttribute('data', encodeData(params));
+          }
+        } catch (_) {}
+        cached.params = params;
+      }
+      return el;
+    }
+
+    const slot = document.createElement('div');
+    slot.setAttribute('data-sw-screen', cacheKey);
+    slot.setAttribute('role', 'group');
+    this._styleScreenSlot(slot);
+    slot.innerHTML = typeof screenContent === 'string' ? screenContent : '';
+
+    const screenElement = slot.firstElementChild || slot;
+    if (screenElement !== slot) {
+      screenElement.setAttribute('data-route-key', cacheKey);
+    }
+
+    const entry = { slot, element: screenElement, params, scrollTop: 0 };
+    this._screenCache.set(cacheKey, entry);
+    container.appendChild(slot);
+    this._showScreenSlot(slot, entry);
+    return screenElement;
+  }
+
   renderScreen(fullRoute, additionalProps = {}) {
     const normalized = fullRoute.startsWith('/') ? fullRoute.substring(1) : fullRoute;
     const [routeName, ...dynamicSegments] = normalized.split('/');
@@ -264,7 +363,8 @@ export class Router {
     const screenContent = typeof route.render === 'function' ? route.render(effectiveParams) : route.render;
 
     if (this.updateTitleCallback) this.updateTitleCallback(normalized);
-    if (container) container.innerHTML = screenContent;
+    // Use resolvedKey as cache key for better screen reuse (same route pattern, different params)
+    if (container) this._showScreen(container, resolvedKey, screenContent, effectiveParams);
     const baseTitle = route.title || '';
     document.title = this.titlePrefix ? (baseTitle ? `${this.titlePrefix} - ${baseTitle}` : this.titlePrefix) : baseTitle;
 
@@ -344,5 +444,20 @@ export class Router {
 
   go_back() {
     window.history.back();
+  }
+
+  /**
+   * Clear the screen cache. Useful for forcing a fresh render of all screens.
+   * @param {string} [cacheKey] - Optional specific cache key to clear. If omitted, clears all.
+   */
+  clearScreenCache(cacheKey) {
+    if (cacheKey) {
+      const cached = this._screenCache.get(cacheKey);
+      cached?.slot?.remove();
+      this._screenCache.delete(cacheKey);
+    } else {
+      this._screenCache.forEach((cached) => cached.slot?.remove());
+      this._screenCache.clear();
+    }
   }
 }

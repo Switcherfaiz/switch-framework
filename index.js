@@ -19,7 +19,10 @@ import {
   redirect,
   replace,
   reload,
-  getActiveRoute
+  getActiveRoute,
+  isScreenActive,
+  useScreenFocus,
+  useParams
 } from './router/index.js';
 import { createProps } from './helpers/index.js';
 import { SwitchComponent, getCurrentComponent } from './registers/SwitchComponent.js';
@@ -108,6 +111,9 @@ export {
   replace,
   reload,
   getActiveRoute,
+  isScreenActive,
+  useScreenFocus,
+  useParams,
   // state management
   createState,
   useState,

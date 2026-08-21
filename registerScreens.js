@@ -37,8 +37,17 @@ export function assertExpoConventions({ tabsLayout, stackScreens, tabScreens }) 
  * Called automatically for screens/layouts via registerScreens. For other components, use registerComponents.
  */
 export function ensureComponentDefined(Cls) {
-  if (Cls?.tag && typeof Cls === 'function' && !customElements.get(Cls.tag)) {
+  if (!Cls?.tag || typeof Cls !== 'function') return;
+  const existing = customElements.get(Cls.tag);
+  if (!existing) {
     customElements.define(Cls.tag, Cls);
+    return;
+  }
+  if (existing !== Cls) {
+    console.warn(
+      `[switch-framework] static tag "${Cls.tag}" is already defined by another class. ` +
+      `Each screen/component needs its own unique tag or the first class wins and routes will look "stuck".`
+    );
   }
 }
 

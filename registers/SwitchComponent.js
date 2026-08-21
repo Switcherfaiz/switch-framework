@@ -20,6 +20,30 @@ import { decodeData } from '../helpers/codecs/codec.js';
  */
 let _currentComponent = null;
 
+function depsEqual(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((value, i) => Object.is(value, b[i]));
+}
+
+function subscribeDep(key, onChange) {
+  try {
+    return subscribeState(key, onChange, { immediate: false });
+  } catch (_) {}
+
+  if (typeof globalThis.globalStates?.subscribe === 'function') {
+    let prev = globalThis.globalStates.getState(key);
+    return globalThis.globalStates.subscribe(() => {
+      const next = globalThis.globalStates.getState(key);
+      if (Object.is(prev, next)) return;
+      prev = next;
+      onChange(next);
+    });
+  }
+
+  return () => {};
+}
+
 export class SwitchComponent extends HTMLElement {
   static screenName = '';
   static path = '/';
@@ -34,6 +58,10 @@ export class SwitchComponent extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._effectUnsubs = [];
+    this._effectSlots = [];
+    this._effectHookIndex = 0;
+    this._effectsQueued = new Set();
+    this._isRendering = false;
     this._stateUnsubs = [];
     this._destroyCallbacks = [];
     this._hasRendered = false;
@@ -73,6 +101,7 @@ export class SwitchComponent extends HTMLElement {
     }
     this._destroyCallbacks.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._destroyCallbacks = [];
+    this._teardownEffects();
     this._effectUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._effectUnsubs = [];
     this._stateUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
@@ -87,8 +116,7 @@ export class SwitchComponent extends HTMLElement {
 
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
-    this._effectUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
-    this._effectUnsubs = [];
+    this._isRendering = true;
     const html = typeof this.render === 'function' ? this.render() : '';
     const styles = this._collectStyleSheets();
     const styleBlock = styles
@@ -99,10 +127,14 @@ export class SwitchComponent extends HTMLElement {
     adoptGlobalComponentSheet(this.shadowRoot);
     const prev = _currentComponent;
     _currentComponent = this;
+    this._effectHookIndex = 0;
     try {
+      if (typeof this.effects === 'function') this.effects();
       if (typeof this.onMount === 'function') this.onMount();
     } finally {
       _currentComponent = prev;
+      this._isRendering = false;
+      this._flushQueuedEffects();
     }
   }
 
@@ -184,28 +216,77 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Subscribe to state keys (createState). When any dep changes, re-renders this component.
-   * Optional callback runs on mount and after each dep change (side effects only — do not call rerender).
-   * @param {(() => void) | null | undefined} callback
-   * @param {string[]} deps - State keys to watch (e.g. ['my-state-key'])
-   * @returns {() => void} unsubscribe
+   * React-style effect. Call from effects() (or onMount).
+   * [] runs once after mount. ['key'] runs on mount and when that state/router
+   * value changes. Returning a function from the callback is cleanup.
+   * useEffect(null, ['key']) re-renders when the key changes, with no callback.
    */
   useEffect(callback, deps = []) {
-    if (!Array.isArray(deps) || deps.length === 0) return () => {};
-    const unsubs = deps.map((k) => {
-      try {
-        return subscribeState(k, () => {
-          if (typeof callback === 'function') callback();
-          this._runRenderAndMount();
-        }, { immediate: false });
-      } catch (_) {
-        return () => {};
+    if (!Array.isArray(deps)) deps = [];
+    const index = this._effectHookIndex++;
+    let slot = this._effectSlots[index];
+    const sameDeps = slot && depsEqual(slot.deps, deps);
+
+    if (!slot) {
+      slot = { callback, deps: deps.slice(), cleanup: null, unsubs: [] };
+      this._effectSlots[index] = slot;
+      slot.unsubs = this._subscribeEffectDeps(index, deps);
+      this._effectsQueued.add(index);
+    } else {
+      slot.callback = callback;
+      if (!sameDeps) {
+        slot.unsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
+        slot.deps = deps.slice();
+        slot.unsubs = this._subscribeEffectDeps(index, deps);
+        this._effectsQueued.add(index);
       }
-    });
-    if (typeof callback === 'function') callback();
-    const unsub = () => unsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
-    this._effectUnsubs.push(unsub);
-    return unsub;
+    }
+
+    return () => this._teardownEffectSlot(index);
+  }
+
+  _subscribeEffectDeps(index, deps) {
+    return deps
+      .filter((key) => typeof key === 'string' && key.length > 0)
+      .map((key) => subscribeDep(key, () => {
+        this._effectsQueued.add(index);
+        if (!this._isRendering) this._runRenderAndMount();
+      }));
+  }
+
+  _flushQueuedEffects() {
+    const queued = [...this._effectsQueued];
+    this._effectsQueued.clear();
+    for (const index of queued) {
+      const slot = this._effectSlots[index];
+      if (!slot) continue;
+      if (typeof slot.cleanup === 'function') {
+        try { slot.cleanup(); } catch (_) {}
+        slot.cleanup = null;
+      }
+      if (typeof slot.callback !== 'function') continue;
+      try {
+        const result = slot.callback();
+        slot.cleanup = typeof result === 'function' ? result : null;
+      } catch (_) {}
+    }
+  }
+
+  _teardownEffectSlot(index) {
+    const slot = this._effectSlots[index];
+    if (!slot) return;
+    slot.unsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
+    if (typeof slot.cleanup === 'function') {
+      try { slot.cleanup(); } catch (_) {}
+    }
+    this._effectSlots[index] = null;
+  }
+
+  _teardownEffects() {
+    this._effectSlots.forEach((_, index) => this._teardownEffectSlot(index));
+    this._effectSlots = [];
+    this._effectHookIndex = 0;
+    this._effectsQueued.clear();
   }
 
   /**

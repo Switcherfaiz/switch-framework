@@ -1,5 +1,6 @@
 import { Router } from './router.js';
 import { createGlobalStates, encodeData, decodeData, createProps } from '../helpers/index.js';
+import { getCurrentComponent } from '../registers/SwitchComponent.js';
 
 export function Stack(config = {}) {
   return {
@@ -43,6 +44,21 @@ export function getActiveRoute() {
     return globalStates.getState('activeRoute') || '';
   }
   return '';
+}
+
+/**
+ * True when `route` is this screen: `home` matches only `/home`,
+ * `home/:id` matches `/home/travel` but not `/home`.
+ */
+export function isScreenActive(screenName, route = getActiveRoute()) {
+  const n = String(screenName || '');
+  const r = String(route || '');
+  if (!n) return false;
+  if (n.includes(':')) {
+    const prefix = n.split('/:')[0];
+    return r.startsWith(prefix + '/') && r !== prefix;
+  }
+  return r === n;
 }
 
 /** Returns the current active full URL as seen in the browser address bar (e.g. "http://localhost:3000/docs/introduction"). */
@@ -175,6 +191,26 @@ export function nextRoute(prefix = '', orderedIds = []) {
   if (idx < 0 || idx >= filtered.length - 1) return null;
   const next = filtered[idx + 1];
   return { route: next.route, params: {}, title: next.title };
+}
+
+/**
+ * Run a callback when this screen is the active route (and when its params change).
+ * Hidden keep-alive screens do not run it. Call from effects().
+ *
+ * @example
+ * effects() {
+ *   useScreenFocus(() => this.loadFeed());
+ * }
+ */
+export function useScreenFocus(callback) {
+  const comp = getCurrentComponent();
+  if (!comp || typeof callback !== 'function' || typeof comp.useEffect !== 'function') {
+    return () => {};
+  }
+  const screenName = comp.constructor.screenName || '';
+  return comp.useEffect(() => {
+    if (isScreenActive(screenName)) callback.call(comp);
+  }, ['activeRoute', 'routeParams']);
 }
 
 export {
