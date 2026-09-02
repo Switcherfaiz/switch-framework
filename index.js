@@ -53,17 +53,160 @@ const useEffect = (function createUseEffect() {
   };
 })();
 
-function useState(identifier, callback) {
-  if (typeof callback === 'undefined' || callback === null) {
-    throw new Error('useState(identifier, callback) requires a callback. For static full re-render, use this.useState(identifier) in static {}.');
+/**
+ * Dual-mode hook:
+ *
+ * New React-style (preferred):
+ *   const [value, setValue] = useState(initialValue)
+ *   Local to this component instance. Calling setValue() triggers a full rerender
+ *   of this component only. No global key needed.
+ *
+ * Old callback style (deprecated – use onState() instead):
+ *   useState('state-key', callbackFn)
+ *   Subscribes to a global state key and calls callbackFn on change.
+ *   Does NOT trigger a full rerender; use for fine-grained DOM patches.
+ */
+function useState(identifierOrInitial, callback) {
+  // Old style: useState('key', fn) — deprecated, prefer onState()
+  if (callback !== undefined) {
+    if (typeof callback !== 'function' && !Array.isArray(callback)) {
+      throw new Error('useState(key, callback): second argument must be a function.');
+    }
+    const [value, unsub] = useStateRaw(identifierOrInitial, callback);
+    const comp = getCurrentComponent();
+    if (comp && comp._stateUnsubs) comp._stateUnsubs.push(unsub);
+    return [value, unsub];
   }
-  if (typeof callback !== 'function' && !Array.isArray(callback)) {
-    throw new Error('useState(identifier, callback) requires a callback or array of callbacks.');
-  }
-  const [value, unsub] = useStateRaw(identifier, callback);
+
+  // New React-style: useState(initialValue) → [value, setter]
   const comp = getCurrentComponent();
-  if (comp && comp._stateUnsubs) comp._stateUnsubs.push(unsub);
-  return [value, unsub];
+  if (!comp) return [identifierOrInitial, () => {}];
+
+  const index = comp._localStateIndex++;
+  if (!comp._localSlots) comp._localSlots = [];
+  if (comp._localSlots[index] === undefined) {
+    comp._localSlots[index] = identifierOrInitial;
+  }
+
+  const value = comp._localSlots[index];
+  const set = (next) => {
+    const cur = comp._localSlots[index];
+    const val = typeof next === 'function' ? next(cur) : next;
+    if (Object.is(cur, val)) return;
+    comp._localSlots[index] = val;
+    if (!comp._isRendering) comp.rerender();
+  };
+  return [value, set];
+}
+
+/**
+ * Subscribe this component to a global shared state key and return its current value.
+ * When the shared state changes, this component rerenders automatically.
+ * The returned setter is equivalent to updateState(key, next).
+ *
+ * **Idempotent creation:** if the key does not exist yet, it is created automatically
+ * using `defaultValue` as the initial value. This means you no longer need a separate
+ * `createState` call for feature-level states — only app-boot states that must exist
+ * before the first render (e.g. in `_layout.js`) still need explicit `createState`.
+ *
+ * @example
+ *   // In render(), effects(), or onMount():
+ *   const [pins, setPins] = useShared('pins', []);
+ *   setPins([...newPins]); // updates global state, all subscribers rerender
+ *
+ *   // Feature-level state — no createState needed anywhere:
+ *   const [tags, setTags] = useShared('home-tags', ['All']);
+ *
+ * @param {string} key - Global state identifier
+ * @param {*} [defaultValue] - Initial value if the key does not exist yet; also used
+ *   as fallback when the stored value is undefined.
+ */
+function useShared(key, defaultValue) {
+  // Auto-create the key if it does not exist yet (idempotent).
+  // First caller wins: subsequent useShared calls with a different defaultValue
+  // simply read the already-created value.
+  try {
+    getState(key);
+  } catch (_) {
+    try { createState(key, defaultValue !== undefined ? defaultValue : null); } catch (_) {}
+  }
+
+  const comp = getCurrentComponent();
+  if (comp) {
+    if (!comp._sharedSubscribedKeys) comp._sharedSubscribedKeys = new Set();
+    // Skip the rerender subscription if onState() already owns this key —
+    // onState takes priority so only the callback fires, not a full rerender.
+    const ownedByOnState = comp._onStateMap?.has(key);
+    if (!comp._sharedSubscribedKeys.has(key) && !ownedByOnState) {
+      comp._sharedSubscribedKeys.add(key);
+      try {
+        const unsub = subscribeState(key, () => {
+          if (!comp._isRendering) comp.rerender();
+        }, { immediate: false });
+        // Store by key so onState() can cancel this subscription later
+        if (!comp._sharedUnsubs) comp._sharedUnsubs = new Map();
+        comp._sharedUnsubs.set(key, unsub);
+        if (comp._stateUnsubs) comp._stateUnsubs.push(unsub);
+      } catch (_) {}
+    }
+  }
+
+  let value;
+  try { value = getState(key); } catch (_) { value = undefined; }
+  if (value === undefined && defaultValue !== undefined) value = defaultValue;
+
+  const setter = (next) => { try { updateState(key, next); } catch (_) {} };
+  return [value, setter];
+}
+
+/**
+ * Subscribe to a global state key and run a callback on change — without triggering
+ * a full rerender. Use this for fine-grained DOM patches (CSS animation toggles,
+ * live counters, class swaps) where replacing innerHTML would reset state.
+ *
+ * Call from onMount(). Subscriptions are deduped per key — calling onState with
+ * the same key on every rerender safely updates the callback reference.
+ *
+ * @example
+ *   onMount() {
+ *     onState('liked', (liked) => {
+ *       const btn = this.select('.heart');
+ *       btn?.classList.toggle('liked', liked);
+ *     });
+ *   }
+ *
+ * @param {string} key - Global state identifier
+ * @param {(newValue: any, oldValue: any) => void} callback
+ */
+function onState(key, callback) {
+  const comp = getCurrentComponent();
+  if (!comp || typeof callback !== 'function') return () => {};
+
+  if (!comp._onStateMap) comp._onStateMap = new Map();
+
+  if (comp._onStateMap.has(key)) {
+    // Update callback reference without adding a new subscription
+    comp._onStateMap.get(key).cb = callback;
+    return comp._onStateMap.get(key).unsub;
+  }
+
+  const slot = { cb: callback, unsub: () => {} };
+  try {
+    slot.unsub = subscribeState(key, (newVal, oldVal) => slot.cb?.(newVal, oldVal), { immediate: false });
+    if (comp._stateUnsubs) comp._stateUnsubs.push(slot.unsub);
+  } catch (_) {}
+
+  comp._onStateMap.set(key, slot);
+
+  // If useShared previously wired a rerender subscription for this key,
+  // cancel it now — onState takes priority (callback-only, no full rerender).
+  if (comp._sharedUnsubs?.has(key)) {
+    try { comp._sharedUnsubs.get(key)(); } catch (_) {}
+    comp._sharedUnsubs.delete(key);
+    comp._sharedSubscribedKeys?.delete(key);
+  }
+
+  return slot.unsub;
 }
 
 function useRef(target) {
@@ -117,6 +260,8 @@ export {
   // state management
   createState,
   useState,
+  useShared,
+  onState,
   useEffect,
   useRef,
   createRef,

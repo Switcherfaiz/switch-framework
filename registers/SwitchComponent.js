@@ -67,6 +67,15 @@ export class SwitchComponent extends HTMLElement {
     this._hasRendered = false;
     this._propsRaw = undefined;
     this._propsCache = null;
+    // React-style local state slots (useState hook)
+    this._localSlots = [];
+    this._localStateIndex = 0;
+    // Tracks which shared keys this instance has subscribed to (useShared)
+    this._sharedSubscribedKeys = null;
+    // Stores the rerender unsub per key from useShared, so onState() can cancel them
+    this._sharedUnsubs = null;
+    // Tracks onState subscriptions keyed by state-key (onState hook)
+    this._onStateMap = null;
   }
 
   connectedCallback() {
@@ -106,6 +115,12 @@ export class SwitchComponent extends HTMLElement {
     this._effectUnsubs = [];
     this._stateUnsubs.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._stateUnsubs = [];
+    // Clean up new hooks
+    if (this._onStateMap) { this._onStateMap.clear(); this._onStateMap = null; }
+    this._sharedUnsubs = null;
+    this._localSlots = [];
+    this._localStateIndex = 0;
+    this._sharedSubscribedKeys = null;
     this._listenerRegistry = null;
     this._delegatedEvents = null;
     if (this.shadowRoot?._switchDelegated) this.shadowRoot._switchDelegated.clear();
@@ -117,6 +132,11 @@ export class SwitchComponent extends HTMLElement {
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
     this._isRendering = true;
+    // Set _currentComponent BEFORE render() so hooks (useState, useShared, onState)
+    // can read it during the render phase.
+    const prev = _currentComponent;
+    _currentComponent = this;
+    this._localStateIndex = 0;
     const html = typeof this.render === 'function' ? this.render() : '';
     const styles = this._collectStyleSheets();
     const styleBlock = styles
@@ -125,8 +145,7 @@ export class SwitchComponent extends HTMLElement {
     this.shadowRoot.innerHTML = styleBlock + (html || '');
     this._hasRendered = true;
     adoptGlobalComponentSheet(this.shadowRoot);
-    const prev = _currentComponent;
-    _currentComponent = this;
+    // _currentComponent is already this; effects() and onMount() can also call hooks.
     this._effectHookIndex = 0;
     try {
       if (typeof this.effects === 'function') this.effects();
