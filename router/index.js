@@ -61,6 +61,19 @@ export function isScreenActive(screenName, route = getActiveRoute()) {
   return r === n;
 }
 
+/**
+ * True when this screen instance matches the active route params.
+ * Use with keep-alive dynamic routes so hidden cached screens stay idle.
+ */
+export function isScreenInstanceActive(comp, screenName = comp?.constructor?.screenName, route = getActiveRoute()) {
+  if (!comp || !isScreenActive(screenName, route)) return false;
+  const routeParams = useParams();
+  const mine = comp.getProps?.() || {};
+  const keys = Object.keys(routeParams);
+  if (!keys.length) return true;
+  return keys.every((k) => String(mine[k] ?? '') === String(routeParams[k] ?? ''));
+}
+
 /** Returns the current active full URL as seen in the browser address bar (e.g. "http://localhost:3000/docs/introduction"). */
 export function getActivePath() {
   try {
@@ -209,7 +222,7 @@ export function useScreenFocus(callback) {
   }
   const screenName = comp.constructor.screenName || '';
   return comp.useEffect(() => {
-    if (isScreenActive(screenName)) callback.call(comp);
+    if (isScreenInstanceActive(comp, screenName)) callback.call(comp);
   }, ['activeRoute', 'routeParams']);
 }
 
@@ -220,4 +233,3 @@ export {
   decodeData,
   createProps
 };
-

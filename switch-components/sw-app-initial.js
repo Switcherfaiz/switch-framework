@@ -4,6 +4,7 @@ import {
   encodeData,
   decodeData
 } from '../router/index.js';
+import { ensureState, updateState } from '../state-managers/index.js';
 import { syncElectronTitleBarHost, installElectronTitleBarRouteSync } from '../electron/shell.js';
 
 export class TwAppInitial extends HTMLElement {
@@ -32,6 +33,13 @@ export class TwAppInitial extends HTMLElement {
     this._ready = true;
 
     globalThis.globalStates = this.globalStates;
+
+    // Mirror router keys into SwitchStateManager so useEffect deps work reliably.
+    ensureState('activeRoute', '');
+    ensureState('routeParams', {});
+    ensureState('searchParams', {});
+    ensureState('activeLayout', 'stack');
+    ensureState('activePath', '');
 
     const initialSplashTag = this.layout?.splash || 'sw-splash-screen';
     this.renderSplash(initialSplashTag);
@@ -121,6 +129,11 @@ export class TwAppInitial extends HTMLElement {
           searchParams,
           activeRoutesHistory: newHistory
         });
+        updateState('activePath', routeInfo.fullPath);
+        updateState('activeRoute', routeInfo.normalizedRoute);
+        updateState('activeLayout', layoutType);
+        updateState('routeParams', routeParams);
+        updateState('searchParams', searchParams);
         document.dispatchEvent(new CustomEvent('router:change', { bubbles: true, detail: routeInfo }));
         syncElectronTitleBarHost(routeInfo.normalizedRoute);
 

@@ -363,8 +363,8 @@ export class Router {
     const screenContent = typeof route.render === 'function' ? route.render(effectiveParams) : route.render;
 
     if (this.updateTitleCallback) this.updateTitleCallback(normalized);
-    // Use resolvedKey as cache key for better screen reuse (same route pattern, different params)
-    if (container) this._showScreen(container, resolvedKey, screenContent, effectiveParams);
+    // Cache by full route path so /user/a and /user/b get separate keep-alive instances.
+    if (container) this._showScreen(container, normalizedRoute, screenContent, effectiveParams);
     const baseTitle = route.title || '';
     document.title = this.titlePrefix ? (baseTitle ? `${this.titlePrefix} - ${baseTitle}` : this.titlePrefix) : baseTitle;
 

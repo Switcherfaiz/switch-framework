@@ -70,6 +70,10 @@ export class SwitchComponent extends HTMLElement {
     // React-style local state slots (useState hook)
     this._localSlots = [];
     this._localStateIndex = 0;
+    // Screen-level instance slots (useInstanceState hook)
+    this._instanceSlots = [];
+    this._instanceSlotIndex = 0;
+    this._didMount = false;
     // Tracks which shared keys this instance has subscribed to (useShared)
     this._sharedSubscribedKeys = null;
     // Stores the rerender unsub per key from useShared, so onState() can cancel them
@@ -120,6 +124,9 @@ export class SwitchComponent extends HTMLElement {
     this._sharedUnsubs = null;
     this._localSlots = [];
     this._localStateIndex = 0;
+    this._instanceSlots = [];
+    this._instanceSlotIndex = 0;
+    this._didMount = false;
     this._sharedSubscribedKeys = null;
     this._listenerRegistry = null;
     this._delegatedEvents = null;
@@ -131,12 +138,14 @@ export class SwitchComponent extends HTMLElement {
 
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
+    const isFirstMount = !this._didMount;
     this._isRendering = true;
     // Set _currentComponent BEFORE render() so hooks (useState, useShared, onState)
     // can read it during the render phase.
     const prev = _currentComponent;
     _currentComponent = this;
     this._localStateIndex = 0;
+    this._instanceSlotIndex = 0;
     const html = typeof this.render === 'function' ? this.render() : '';
     const styles = this._collectStyleSheets();
     const styleBlock = styles
@@ -149,7 +158,12 @@ export class SwitchComponent extends HTMLElement {
     this._effectHookIndex = 0;
     try {
       if (typeof this.effects === 'function') this.effects();
-      if (typeof this.onMount === 'function') this.onMount();
+      if (isFirstMount) {
+        if (typeof this.onMount === 'function') this.onMount();
+        this._didMount = true;
+      } else if (typeof this.onUpdate === 'function') {
+        this.onUpdate();
+      }
     } finally {
       _currentComponent = prev;
       this._isRendering = false;
@@ -309,9 +323,27 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Override to run after each render. Attach listeners here.
+   * Override to run once after the first render. Attach listeners here.
    */
   onMount() {}
+
+  /**
+   * Optional hook after later rerenders (not the first mount).
+   */
+  onUpdate() {}
+
+  /**
+   * Patch one region without rebuilding the whole component.
+   * @param {string} selector
+   * @param {string} html
+   * @returns {Element|null}
+   */
+  paint(selector, html) {
+    const el = this.select(selector);
+    if (!el) return null;
+    el.outerHTML = html;
+    return this.select(selector);
+  }
 
   /**
    * Override to run when component is removed. Return array of cleanup functions or do cleanup directly.
@@ -382,8 +414,23 @@ export class SwitchComponent extends HTMLElement {
         if (e._switchHandled) return;
         const reg = this._listenerRegistry?.[event];
         if (!reg) return;
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
         for (const [sel, handler] of reg) {
-          const target = sel === ':host' || sel === '' ? this : e.target.closest(sel);
+          let target = null;
+          if (sel === ':host' || sel === '') {
+            target = this;
+          } else {
+            for (const node of path) {
+              if (node === this.shadowRoot || node === this) break;
+              if (!node || node.nodeType !== 1) continue;
+              try {
+                if (node.matches(sel)) { target = node; break; }
+              } catch (_) {}
+            }
+            if (!target) {
+              try { target = e.target?.closest?.(sel) || null; } catch (_) { target = null; }
+            }
+          }
           if (target) {
             e._switchHandled = true;
             handler.call(this, e);

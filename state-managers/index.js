@@ -2,8 +2,14 @@ import { SwitchStateManager } from './stateManager.js';
 
 const stateManager = new SwitchStateManager();
 
-/** Create a new state. Returns [getValue, setValue]. */
+/** Create a new state. Returns [getValue, setValue]. Throws if the key already exists. */
 export const createState = stateManager.createState.bind(stateManager);
+
+/** Create a state only when missing. Returns [getValue, setValue]. Never throws for duplicates. */
+export const ensureState = stateManager.ensureState.bind(stateManager);
+
+/** True when a global state key already exists. */
+export const hasState = stateManager.hasState.bind(stateManager);
 
 /** Get current value of a state by identifier. */
 export const getState = stateManager.getState.bind(stateManager);

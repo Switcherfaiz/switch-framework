@@ -51,6 +51,10 @@ export class SwitchStateManager {
     return null;
   }
 
+  hasState(identifier) {
+    return this.states.has(identifier);
+  }
+
   createState(identifier, initialValue) {
     if (typeof identifier !== 'string' || !identifier.trim()) {
       throw new Error('State identifier must be a non-empty string.');
@@ -70,6 +74,20 @@ export class SwitchStateManager {
     const setter = (newValueOrUpdater) => this.setState(identifier, newValueOrUpdater);
 
     return [getter, setter];
+  }
+
+  /**
+   * Create a state if missing, otherwise return getter/setter for the existing key.
+   * Safe to call from boot code, useShared, and feature modules.
+   */
+  ensureState(identifier, initialValue) {
+    if (this.states.has(identifier)) {
+      return [
+        () => this.getState(identifier),
+        (newValueOrUpdater) => this.setState(identifier, newValueOrUpdater)
+      ];
+    }
+    return this.createState(identifier, initialValue);
   }
 
   getState(identifier) {

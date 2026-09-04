@@ -21,6 +21,7 @@ import {
   reload,
   getActiveRoute,
   isScreenActive,
+  isScreenInstanceActive,
   useScreenFocus,
   useParams
 } from './router/index.js';
@@ -32,6 +33,8 @@ import { FlatList } from './components/FlatList.js';
 import { ElectronTitleBar } from './components/ElectronTitleBar.js';
 import {
   createState,
+  ensureState,
+  hasState,
   useState as useStateRaw,
   updateState,
   getState,
@@ -100,6 +103,41 @@ function useState(identifierOrInitial, callback) {
 }
 
 /**
+ * Screen-level state stored on this component instance (like constructor fields).
+ * Not global — other screens cannot read it with getState().
+ *
+ * @param {*} initialValue - Initial value or factory `() => value`
+ * @param {{ rerender?: boolean }} [options]
+ *   - rerender: true (default) calls rerender() after set
+ *   - rerender: false only updates memory (pair with this.paint() or onState)
+ */
+function useInstanceState(initialValue, options = {}) {
+  const { rerender: shouldRerender = true } = options;
+  const comp = getCurrentComponent();
+  if (!comp) {
+    const fallback = typeof initialValue === 'function' ? initialValue() : initialValue;
+    return [fallback, () => {}];
+  }
+
+  const index = comp._instanceSlotIndex++;
+  if (!comp._instanceSlots) comp._instanceSlots = [];
+  if (comp._instanceSlots[index] === undefined) {
+    comp._instanceSlots[index] = typeof initialValue === 'function' ? initialValue() : initialValue;
+  }
+
+  const value = comp._instanceSlots[index];
+  const set = (next, setOptions = {}) => {
+    const cur = comp._instanceSlots[index];
+    const val = typeof next === 'function' ? next(cur) : next;
+    if (Object.is(cur, val)) return;
+    comp._instanceSlots[index] = val;
+    const rerenderNow = setOptions.rerender ?? shouldRerender;
+    if (rerenderNow && !comp._isRendering) comp.rerender();
+  };
+  return [value, set];
+}
+
+/**
  * Subscribe this component to a global shared state key and return its current value.
  * When the shared state changes, this component rerenders automatically.
  * The returned setter is equivalent to updateState(key, next).
@@ -122,14 +160,7 @@ function useState(identifierOrInitial, callback) {
  *   as fallback when the stored value is undefined.
  */
 function useShared(key, defaultValue) {
-  // Auto-create the key if it does not exist yet (idempotent).
-  // First caller wins: subsequent useShared calls with a different defaultValue
-  // simply read the already-created value.
-  try {
-    getState(key);
-  } catch (_) {
-    try { createState(key, defaultValue !== undefined ? defaultValue : null); } catch (_) {}
-  }
+  ensureState(key, defaultValue !== undefined ? defaultValue : null);
 
   const comp = getCurrentComponent();
   if (comp) {
@@ -255,12 +286,16 @@ export {
   reload,
   getActiveRoute,
   isScreenActive,
+  isScreenInstanceActive,
   useScreenFocus,
   useParams,
   // state management
   createState,
+  ensureState,
+  hasState,
   useState,
   useShared,
+  useInstanceState,
   onState,
   useEffect,
   useRef,
