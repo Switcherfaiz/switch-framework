@@ -56,7 +56,7 @@ export function isScreenActive(screenName, route = getActiveRoute()) {
   if (!n) return false;
   if (n.includes(':')) {
     const prefix = n.split('/:')[0];
-    return r.startsWith(prefix + '/') && r !== prefix;
+    return r === prefix || r.startsWith(prefix + '/');
   }
   return r === n;
 }
@@ -71,6 +71,8 @@ export function isScreenInstanceActive(comp, screenName = comp?.constructor?.scr
   const mine = comp.getProps?.() || {};
   const keys = Object.keys(routeParams);
   if (!keys.length) return true;
+  // Shared cacheKey screens have no per-param props; they read the active route globally.
+  if (!Object.keys(mine).length) return true;
   return keys.every((k) => String(mine[k] ?? '') === String(routeParams[k] ?? ''));
 }
 

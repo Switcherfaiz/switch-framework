@@ -73,6 +73,7 @@ export class TwAppInitial extends HTMLElement {
           path,
           title,
           layout,
+          cacheKey: screen.cacheKey || '',
           render: (props = {}) => {
             if (typeof screen.render === 'function') return screen.render(props, api);
             if (!tag) return '';

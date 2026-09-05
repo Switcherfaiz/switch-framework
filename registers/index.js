@@ -1,4 +1,5 @@
 import { registerFramework } from '../index.js';
+import { initTheme } from '../themes/index.js';
 
 let _appStarted = false;
 
@@ -11,10 +12,7 @@ export async function startApp(layout, registers) {
   _appStarted = true;
   registerFramework();
 
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme === 'dark' || savedTheme === 'light') {
-    document.documentElement.dataset.theme = savedTheme;
-  }
+  initTheme();
 
   const root = document.querySelector('sw-app-initial');
   if (root && layout) {

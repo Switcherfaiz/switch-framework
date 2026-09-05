@@ -148,10 +148,7 @@ export class SwitchComponent extends HTMLElement {
     this._instanceSlotIndex = 0;
     const html = typeof this.render === 'function' ? this.render() : '';
     const styles = this._collectStyleSheets();
-    const styleBlock = styles
-      ? (String(styles).trim().startsWith('<style') ? styles : `<style>${styles}</style>`)
-      : '';
-    this.shadowRoot.innerHTML = styleBlock + (html || '');
+    this.shadowRoot.innerHTML = (styles || '') + (html || '');
     this._hasRendered = true;
     adoptGlobalComponentSheet(this.shadowRoot);
     // _currentComponent is already this; effects() and onMount() can also call hooks.
@@ -192,8 +189,10 @@ export class SwitchComponent extends HTMLElement {
       if (typeof fn !== 'function' || fn === SwitchComponent.prototype.styleSheet) continue;
       if (seen.has(fn)) continue;
       seen.add(fn);
-      const raw = fn.call(this);
-      if (raw) parts.push(this._processStyleSheet(raw));
+      const raw = this._processStyleSheet(fn.call(this));
+      if (!raw) continue;
+      const trimmed = String(raw).trim();
+      parts.push(trimmed.startsWith('<style') ? trimmed : `<style>${trimmed}</style>`);
     }
 
     return parts.join('');
@@ -282,8 +281,12 @@ export class SwitchComponent extends HTMLElement {
     return deps
       .filter((key) => typeof key === 'string' && key.length > 0)
       .map((key) => subscribeDep(key, () => {
+        const slot = this._effectSlots[index];
         this._effectsQueued.add(index);
-        if (!this._isRendering) this._runRenderAndMount();
+        if (this._isRendering) return;
+        // useEffect(null, deps) remounts. A real callback only re-runs the effect.
+        if (!slot?.callback) this._runRenderAndMount();
+        else this._flushQueuedEffects();
       }));
   }
 
@@ -477,6 +480,7 @@ export class SwitchComponent extends HTMLElement {
     };
     if (this.layout) config.layout = this.layout;
     if (this.props) config.props = this.props;
+    if (this.cacheKey) config.cacheKey = this.cacheKey;
     return config;
   }
 }

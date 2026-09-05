@@ -114,7 +114,7 @@ export class Router {
     if (templateSegments.length !== routeSegments.length) return {};
 
     return templateSegments.reduce((acc, seg, idx) => {
-      if (seg.startsWith(':')) acc[seg.slice(1)] = routeSegments[idx];
+      if (seg.startsWith(':')) acc[seg.slice(1).replace(/\?$/, '')] = routeSegments[idx] || '';
       return acc;
     }, {});
   }
@@ -169,15 +169,17 @@ export class Router {
       return aSegments.length - bSegments.length;
     });
 
-    // Try to match dynamic routes
+    // Try to match dynamic routes (`:id` required, `:id?` optional)
     const routeSegments = normalized.split('/');
     
     for (const [routeKey, route] of dynamicRoutes) {
       const pathTemplate = route.path || '/' + routeKey;
       const patternSegments = pathTemplate.replace(/^\//, '').split('/');
-      
-      // Must have same number of segments
-      if (patternSegments.length !== routeSegments.length) {
+      const last = patternSegments[patternSegments.length - 1] || '';
+      const lastOptional = last.startsWith(':') && last.endsWith('?');
+      const requiredCount = lastOptional ? patternSegments.length - 1 : patternSegments.length;
+
+      if (routeSegments.length !== patternSegments.length && !(lastOptional && routeSegments.length === requiredCount)) {
         continue;
       }
 
@@ -187,13 +189,21 @@ export class Router {
       for (let i = 0; i < patternSegments.length; i++) {
         const patternSegment = patternSegments[i];
         const routeSegment = routeSegments[i];
+        const optional = patternSegment.startsWith(':') && patternSegment.endsWith('?');
+        const paramName = patternSegment.startsWith(':')
+          ? patternSegment.slice(1).replace(/\?$/, '')
+          : '';
         
         if (patternSegment.startsWith(':')) {
-          // Extract parameter name and value
-          const paramName = patternSegment.slice(1);
-          dynamicParams[paramName] = routeSegment;
+          if (routeSegment == null && optional) {
+            dynamicParams[paramName] = '';
+          } else if (routeSegment == null) {
+            isMatch = false;
+            break;
+          } else {
+            dynamicParams[paramName] = routeSegment;
+          }
         } else if (patternSegment !== routeSegment) {
-          // Static segment must match exactly
           isMatch = false;
           break;
         }
@@ -226,10 +236,15 @@ export class Router {
   }
 
   buildPath(route, params) {
-    let path = route.path;
+    let path = route.path || '';
     Object.entries(params || {}).forEach(([key, value]) => {
-      path = path.replace(`:${key}`, value);
+      if (value == null || value === '') {
+        path = path.replace(`:${key}?`, '').replace(`:${key}`, '');
+      } else {
+        path = path.replace(`:${key}?`, encodeURIComponent(String(value))).replace(`:${key}`, encodeURIComponent(String(value)));
+      }
     });
+    path = path.replace(/\/:[^/]+\?/g, '').replace(/\/+/g, '/').replace(/\/$/, '') || '/';
     return path.startsWith('/') ? path : '/' + path;
   }
 
@@ -286,7 +301,7 @@ export class Router {
     });
   }
 
-  _showScreen(container, cacheKey, screenContent, params = {}) {
+  _showScreen(container, cacheKey, screenContent, params = {}, options = {}) {
     if (!container) return;
     this._prepareScreenHost(container);
 
@@ -299,13 +314,9 @@ export class Router {
     if (cached?.slot && container.contains(cached.slot)) {
       this._showScreenSlot(cached.slot, cached);
       const el = cached.element;
-      if (el?.setAttribute && JSON.stringify(cached.params) !== JSON.stringify(params)) {
-        try {
-          if (el.hasAttribute('data') && typeof encodeData === 'function') {
-            el.setAttribute('data', encodeData(params));
-          }
-        } catch (_) {}
-        cached.params = params;
+      cached.params = params;
+      if (!options.reuseParams && el?.setAttribute && el.hasAttribute('data') && typeof encodeData === 'function') {
+        try { el.setAttribute('data', encodeData(params)); } catch (_) {}
       }
       return el;
     }
@@ -363,8 +374,9 @@ export class Router {
     const screenContent = typeof route.render === 'function' ? route.render(effectiveParams) : route.render;
 
     if (this.updateTitleCallback) this.updateTitleCallback(normalized);
-    // Cache by full route path so /user/a and /user/b get separate keep-alive instances.
-    if (container) this._showScreen(container, normalizedRoute, screenContent, effectiveParams);
+    const cacheKey = route.cacheKey || normalizedRoute;
+    // cacheKey reuses one instance across param changes (e.g. /home and /home/Travel).
+    if (container) this._showScreen(container, cacheKey, screenContent, effectiveParams, { reuseParams: !!route.cacheKey });
     const baseTitle = route.title || '';
     document.title = this.titlePrefix ? (baseTitle ? `${this.titlePrefix} - ${baseTitle}` : this.titlePrefix) : baseTitle;
 
