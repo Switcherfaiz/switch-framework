@@ -162,31 +162,61 @@ export class SwitchStateManager {
     return `switchstate:${identifier}`;
   }
 
-  /** @param {'flatlist'} [kind='flatlist'] */
+  /** @param {'flatlist'|'scrollview'|'modal'} [kind='flatlist'] */
   createRef(kind = 'flatlist') {
+    const call = (name, args) => ref._target?.[name]?.(...args);
+
     const ref = {
       __switchRef: true,
       kind,
       _target: null,
 
-      scrollToIndex({ index, animated = true, viewOffset = 0, viewPosition } = {}) {
-        ref._target?.scrollToIndex?.({ index, animated, viewOffset, viewPosition });
+      scrollTo(opts = {}) {
+        ref._target?.scrollTo?.(opts);
       },
 
-      scrollToEnd({ animated = true } = {}) {
-        ref._target?.scrollToEnd?.({ animated });
+      scrollToIndex(opts = {}) {
+        ref._target?.scrollToIndex?.(opts);
       },
 
-      scrollToOffset({ offset, animated = true } = {}) {
-        ref._target?.scrollToOffset?.({ offset, animated });
+      scrollToEnd(opts = {}) {
+        ref._target?.scrollToEnd?.(opts);
       },
 
-      scrollBy({ x = 0, y = 0, animated = true } = {}) {
-        ref._target?.scrollBy?.({ x, y, animated });
+      scrollToOffset(opts = {}) {
+        ref._target?.scrollToOffset?.(opts);
+      },
+
+      scrollBy(opts = {}) {
+        ref._target?.scrollBy?.(opts);
       },
 
       flashScrollIndicators() {
         ref._target?.flashScrollIndicators?.();
+      },
+
+      recordInteraction() {
+        ref._target?.recordInteraction?.();
+      },
+
+      append(html) {
+        return call('append', [html]);
+      },
+
+      appendItems(items) {
+        return call('appendItems', [items]);
+      },
+
+      reset(items) {
+        return call('reset', [items]);
+      },
+
+      present() {
+        ref._target?.present?.();
+      },
+
+      dismiss() {
+        ref._target?.dismiss?.();
       }
     };
 

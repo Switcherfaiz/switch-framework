@@ -1,23 +1,20 @@
-import { SwitchComponent, getState, subscribeState } from '../index.js';
-import { bindStaticRefs, bindInstanceRefs } from '../state-managers/index.js';
+import { ScrollView } from './ScrollView.js';
+
+const FLATLIST_SCOPE = 'flatlist';
 
 /**
- * FlatList – React Native-inspired list component for Switch Framework
+ * FlatList – React Native-inspired list on top of ScrollView.
  *
- * Styling:
- * - Host (global CSS): `my-flat-list { }` — targets the custom element (:host)
- * - Extended styleSheet(): use `flatlist` as the inner scope alias, e.g.
- *   `flatlist::-webkit-scrollbar { width: 6px; }` or `flatlist .flat-list-content { }`
- * - CSS variables on `:host` in styleSheet inherit into shadow children
+ * Data / loading patch in place (onState + insertAdjacentHTML). Axis, columns,
+ * and indicator keys remount the shell. Pass props as a state key or a literal:
+ *   createProps({ horizontal: true })
+ *   createProps({ horizontal: 'inbox-horizontal' })
  *
  * USER OVERRIDABLE METHODS:
  * - renderItem, renderLoader, renderEmpty, renderHeader, renderFooter, renderSeparator, renderError
  * - keyExtractor, onEndReached, onRefresh, onScroll, getItemLayout, styleSheet, render
  */
-
-const FLATLIST_SCOPE = 'flatlist';
-
-export class FlatList extends SwitchComponent {
+export class FlatList extends ScrollView {
   static tag = 'sw-flat-list';
 
   static numColumns = 1;
@@ -29,51 +26,70 @@ export class FlatList extends SwitchComponent {
   static trackVisibleItems = false;
   static showsVerticalScrollIndicator = true;
   static showsHorizontalScrollIndicator = true;
-  /** Horizontal row item width, e.g. `'100%'` (carousel) or `'148px'`. Applied to item wrappers. */
   static horizontalItemWidth = '';
+  static layout = '';
 
-  /** Override default `${tag}-data` state key for this list's items */
   static dataState = '';
-  /** State key — FlatList reads `getState(horizontalState)` on each render */
   static horizontalState = '';
-  /** State key — FlatList reads `getState(numColumnsState)` on each render */
   static numColumnsState = '';
   static loadingState = '';
   static refreshingState = '';
   static errorState = '';
 
-  /** Rewrites `flatlist::…` / `flatlist .class` to `.flatlist…` in extended styleSheets */
   static processStyleSheet(css) {
-    return String(css).replace(
+    const next = String(css).replace(
       new RegExp(`(?<![\\w.-])${FLATLIST_SCOPE}(?=::|[\\s.#\\[,>+~])`, 'gi'),
       `.${FLATLIST_SCOPE}`
     );
+    return ScrollView.processStyleSheet(next);
   }
 
   constructor() {
     super();
-
-    this._containerRef = null;
-    this._itemsRef = new Map();
-    this._scrollPositionRef = { x: 0, y: 0 };
-    this._isNearEndRef = false;
     this._visibleItemsRef = new Set();
-    this._renderedItems = [];
-    this._isMounted = false;
     this._visibleUpdateRaf = null;
   }
 
-  renderItem({ item, index, separators }) {
-    return `<div class="flat-list-item" data-index="${index}">${JSON.stringify(item)}</div>`;
+  _shell() {
+    return {
+      root: 'flatlist flat-list-wrapper scroll-view',
+      port: 'flatlist flat-list-container scroll-view-port',
+      content: 'flat-list-content scroll-view-content',
+      empty: 'flat-list-empty scroll-view-empty',
+      error: 'flat-list-error scroll-view-error',
+      loader: 'flat-list-loader scroll-view-loader',
+      item: 'flat-list-item-wrapper scroll-view-item'
+    };
   }
 
-  keyExtractor(item, index) {
-    return item?.id ?? item?.key ?? `item-${index}`;
+  _isHorizontal() {
+    return !!this._read('horizontal', false);
+  }
+
+  orientation() {
+    const props = this.getProps() || {};
+    if (props.orientation || this.constructor.orientationState) return super.orientation();
+    return this._isHorizontal() ? 'horizontal' : 'vertical';
+  }
+
+  layout() {
+    const props = this.getProps() || {};
+    if (props.layout || this.constructor.layoutState || this.constructor.layout) {
+      const value = super.layout();
+      if (value && value !== 'none') return value;
+    }
+    if (this._isHorizontal()) return 'row';
+    if (this.numColumns() > 1) return 'grid';
+    return 'stack';
+  }
+
+  renderItem({ item, index }) {
+    return `<div class="flat-list-item" data-index="${index}">${JSON.stringify(item)}</div>`;
   }
 
   renderLoader() {
     return `
-      <div class="flat-list-loader">
+      <div class="flat-list-loader-inner">
         <div class="loader-track">
           <div class="loader-bar"></div>
         </div>
@@ -82,15 +98,7 @@ export class FlatList extends SwitchComponent {
   }
 
   renderEmpty() {
-    return `<div class="flat-list-empty">No items</div>`;
-  }
-
-  renderHeader() {
-    return '';
-  }
-
-  renderFooter() {
-    return '';
+    return `<div class="flat-list-empty-label">No items</div>`;
   }
 
   renderSeparator() {
@@ -98,10 +106,10 @@ export class FlatList extends SwitchComponent {
   }
 
   renderError() {
-    return `<div class="flat-list-error">Error loading data</div>`;
+    return `<div class="flat-list-error-label">Error loading data</div>`;
   }
 
-  getItemLayout(data, index) {
+  getItemLayout() {
     return null;
   }
 
@@ -115,46 +123,12 @@ export class FlatList extends SwitchComponent {
 
   onScroll(event) {
     this._handleScroll(event);
-  }
-
-  _handleScroll(event) {
-    const container = event.target;
-    const { scrollTop, scrollLeft, scrollHeight, clientHeight, scrollWidth, clientWidth } = container;
-
-    this._scrollPositionRef = { x: scrollLeft, y: scrollTop };
-
-    const isHorizontal = this._isHorizontal();
-    const threshold = this._readConfig('onEndReachedThreshold', 0.5);
-
-    if (!isHorizontal) {
-      const thresholdPixels = threshold * clientHeight;
-      const isNearEnd = scrollTop + clientHeight >= scrollHeight - thresholdPixels;
-
-      if (isNearEnd && !this._isNearEndRef) {
-        this._isNearEndRef = true;
-        this.onEndReached();
-      } else if (!isNearEnd) {
-        this._isNearEndRef = false;
-      }
-    } else {
-      const thresholdPixels = threshold * clientWidth;
-      const isNearEnd = scrollLeft + clientWidth >= scrollWidth - thresholdPixels;
-
-      if (isNearEnd && !this._isNearEndRef) {
-        this._isNearEndRef = true;
-        this.onEndReached();
-      } else if (!isNearEnd) {
-        this._isNearEndRef = false;
-      }
-    }
-
     if (this.constructor.trackVisibleItems) this._scheduleVisibleItemsUpdate();
   }
 
   _scheduleVisibleItemsUpdate() {
-    if (!this._containerRef) return;
+    if (!this._portRef) return;
     if (this._visibleUpdateRaf) return;
-
     this._visibleUpdateRaf = requestAnimationFrame(() => {
       this._visibleUpdateRaf = null;
       this._updateVisibleItems();
@@ -162,191 +136,44 @@ export class FlatList extends SwitchComponent {
   }
 
   _updateVisibleItems() {
-    if (!this._containerRef) return;
-
-    const containerRect = this._containerRef.getBoundingClientRect();
-    const newVisibleItems = new Set();
-
+    if (!this._portRef) return;
+    const containerRect = this._portRef.getBoundingClientRect();
+    const next = new Set();
     for (const [key, element] of this._itemsRef) {
       const rect = element.getBoundingClientRect();
       const isVisible = !(rect.bottom < containerRect.top || rect.top > containerRect.bottom);
-
-      if (isVisible) newVisibleItems.add(key);
+      if (isVisible) next.add(key);
     }
-
-    this._visibleItemsRef = newVisibleItems;
+    this._visibleItemsRef = next;
   }
 
-  _getStateKeys() {
-    const tag = this.constructor.tag || 'flat-list';
-    const defaults = {
-      data: `${tag}-data`,
-      loading: `${tag}-loading`,
-      refreshing: `${tag}-refreshing`,
-      error: `${tag}-error`
-    };
-    const Cls = this.constructor;
-    return {
-      data: Cls.dataState || defaults.data,
-      loading: Cls.loadingState || defaults.loading,
-      refreshing: Cls.refreshingState || defaults.refreshing,
-      error: Cls.errorState || defaults.error
-    };
+  _wrapItem(itemHtml, key, index) {
+    const shell = this._shell();
+    const layout = this.layout();
+    const columns = this.numColumns();
+    const style = this._getItemWrapperStyle(layout === 'grid', columns, layout === 'row');
+    return `<div class="${shell.item}" data-key="${key}" data-index="${index}" style="${style}">${itemHtml}</div>`;
   }
 
-  _readConfig(prop, fallback) {
-    const Cls = this.constructor;
-    const stateKey = Cls[`${prop}State`];
-    if (stateKey && typeof stateKey === 'string') {
-      try {
-        const val = getState(stateKey);
-        if (val !== undefined && val !== null) return val;
-      } catch (_) {}
+  _getItemWrapperStyle(isGrid, numColumns, horizontal) {
+    if (isGrid) return `flex: 0 0 calc(${100 / numColumns}% - 8px);`;
+    if (horizontal) {
+      const w = this.constructor.horizontalItemWidth;
+      if (w) return `flex: 0 0 ${w};`;
+      return 'flex: 0 0 auto;';
     }
-    const direct = Cls[prop];
-    return direct !== undefined && direct !== null ? direct : fallback;
-  }
-
-  _isHorizontal() {
-    return !!this._readConfig('horizontal', false);
-  }
-
-  _getNumColumns() {
-    const n = this._readConfig('numColumns', 1);
-    return Number(n) || 1;
-  }
-
-  _showsVerticalScrollIndicator() {
-    return !!this._readConfig('showsVerticalScrollIndicator', true);
-  }
-
-  _showsHorizontalScrollIndicator() {
-    return !!this._readConfig('showsHorizontalScrollIndicator', true);
-  }
-
-  _getScrollIndicatorClasses(horizontal) {
-    const classes = [];
-    if (!horizontal && !this._showsVerticalScrollIndicator()) classes.push('hide-scroll-v');
-    if (horizontal && !this._showsHorizontalScrollIndicator()) classes.push('hide-scroll-h');
-    return classes;
-  }
-
-  scrollToIndex({ index, animated = true, viewOffset = 0, viewPosition } = {}) {
-    const itemKey = this._renderedItems[index];
-    if (!itemKey || !this._containerRef) return;
-
-    const element = this._itemsRef.get(itemKey);
-    if (!element) return;
-
-    const horizontal = this._isHorizontal();
-    const container = this._containerRef;
-
-    if (viewPosition !== undefined && viewPosition !== null) {
-      const itemRect = element.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      if (horizontal) {
-        const itemStart = itemRect.left - containerRect.left + container.scrollLeft;
-        const target = itemStart - (container.clientWidth * viewPosition) + viewOffset;
-        container.scrollTo({ left: target, behavior: animated ? 'smooth' : 'auto' });
-      } else {
-        const itemStart = itemRect.top - containerRect.top + container.scrollTop;
-        const target = itemStart - (container.clientHeight * viewPosition) + viewOffset;
-        container.scrollTo({ top: target, behavior: animated ? 'smooth' : 'auto' });
-      }
-      return;
-    }
-
-    element.scrollIntoView({
-      behavior: animated ? 'smooth' : 'auto',
-      block: horizontal ? 'nearest' : 'start',
-      inline: horizontal ? 'start' : 'nearest'
-    });
-  }
-
-  scrollToEnd({ animated = true } = {}) {
-    if (!this._containerRef) return;
-    const container = this._containerRef;
-    const isHorizontal = this._isHorizontal();
-
-    container.scrollTo({
-      [isHorizontal ? 'left' : 'top']: isHorizontal
-        ? container.scrollWidth - container.clientWidth
-        : container.scrollHeight - container.clientHeight,
-      behavior: animated ? 'smooth' : 'auto'
-    });
-  }
-
-  scrollToOffset({ offset, animated = true }) {
-    if (!this._containerRef) return;
-    const isHorizontal = this._isHorizontal();
-
-    this._containerRef.scrollTo({
-      [isHorizontal ? 'left' : 'top']: offset,
-      behavior: animated ? 'smooth' : 'auto'
-    });
-  }
-
-  scrollBy({ x = 0, y = 0, animated = true } = {}) {
-    if (!this._containerRef) return;
-    this._containerRef.scrollBy({
-      left: x,
-      top: y,
-      behavior: animated ? 'smooth' : 'auto'
-    });
-  }
-
-  recordInteraction() {}
-
-  flashScrollIndicators() {
-    if (this._containerRef) {
-      this._containerRef.style.scrollbarColor = 'var(--primary) transparent';
-      setTimeout(() => {
-        if (this._containerRef) this._containerRef.style.scrollbarColor = '';
-      }, 300);
-    }
-  }
-
-  onMount() {
-    this._isMounted = true;
-    this._containerRef = this.select('.flat-list-container');
-
-    if (this._containerRef) {
-      this._containerRef.addEventListener('scroll', (e) => this.onScroll(e));
-    }
-
-    const items = this.selectAll('.flat-list-item-wrapper');
-    items.forEach((item) => {
-      const key = item.dataset.key;
-      if (key) this._itemsRef.set(key, item);
-    });
-
-    bindStaticRefs(this);
-    bindInstanceRefs(this);
-    this._syncHorizontalSlideWidths();
-    requestAnimationFrame(() => this._syncHorizontalSlideWidths());
-
-    if (this._isHorizontal() && this.constructor.horizontalItemWidth === '100%' && this._containerRef && typeof ResizeObserver !== 'undefined') {
-      this._resizeOb = new ResizeObserver(() => this._syncHorizontalSlideWidths());
-      this._resizeOb.observe(this._containerRef);
-      this.addOnDestroy(() => {
-        this._resizeOb?.disconnect();
-        this._resizeOb = null;
-      });
-    }
-
-    this._subscribeToStates();
+    return '';
   }
 
   _syncHorizontalSlideWidths() {
-    if (!this._isHorizontal() || !this._containerRef) return;
-
+    if (!this._isHorizontal() || !this._portRef) return;
     const widthMode = this.constructor.horizontalItemWidth;
-    const container = this._containerRef;
-    const viewport = container.clientWidth;
+    const port = this._portRef;
+    const viewport = port.clientWidth;
     if (!viewport) return;
 
     if (widthMode === '100%') {
-      container.style.scrollSnapType = 'x mandatory';
+      port.style.scrollSnapType = 'x mandatory';
       this.selectAll('.flat-list-item-wrapper').forEach((el) => {
         el.style.flex = `0 0 ${viewport}px`;
         el.style.width = `${viewport}px`;
@@ -370,143 +197,35 @@ export class FlatList extends SwitchComponent {
     });
   }
 
-  _subscribeToStates() {
-    const keys = this._getStateKeys();
+  onMount() {
+    super.onMount();
+    this._syncHorizontalSlideWidths();
+    requestAnimationFrame(() => this._syncHorizontalSlideWidths());
 
-    try {
-      const unsub = subscribeState(keys.data, () => {
-        if (this._isMounted) this.rerender();
-      }, { immediate: false });
-      this._stateUnsubs.push(unsub);
-    } catch (_) {}
+    if (this._isHorizontal() && this.constructor.horizontalItemWidth === '100%' && this._portRef && typeof ResizeObserver !== 'undefined') {
+      this._resizeOb = new ResizeObserver(() => this._syncHorizontalSlideWidths());
+      this._resizeOb.observe(this._portRef);
+      this.addOnDestroy(() => {
+        this._resizeOb?.disconnect();
+        this._resizeOb = null;
+      });
+    }
+  }
 
-    try {
-      const unsub = subscribeState(keys.loading, () => {
-        if (this._isMounted) this.rerender();
-      }, { immediate: false });
-      this._stateUnsubs.push(unsub);
-    } catch (_) {}
+  onUpdate() {
+    super.onUpdate();
+    this._syncHorizontalSlideWidths();
   }
 
   onDestroy() {
-    this._isMounted = false;
     if (this._visibleUpdateRaf) {
       cancelAnimationFrame(this._visibleUpdateRaf);
       this._visibleUpdateRaf = null;
     }
-    this._containerRef = null;
     this._resizeOb?.disconnect();
     this._resizeOb = null;
-    this._itemsRef.clear();
     this._visibleItemsRef.clear();
-  }
-
-  render() {
-    const keys = this._getStateKeys();
-    let data = [];
-    let loading = false;
-    let refreshing = false;
-    let error = null;
-
-    try { data = getState(keys.data) ?? []; } catch (_) {}
-    try { loading = getState(keys.loading) ?? false; } catch (_) {}
-    try { refreshing = getState(keys.refreshing) ?? false; } catch (_) {}
-    try { error = getState(keys.error) ?? null; } catch (_) {}
-
-    const numColumns = this._getNumColumns();
-    const horizontal = this._isHorizontal();
-    const isGrid = numColumns > 1 && !horizontal;
-
-    let itemsHtml = '';
-    this._renderedItems = [];
-
-    if (error && data.length === 0) {
-      itemsHtml = this.renderError();
-    } else if (data.length === 0 && !loading) {
-      itemsHtml = this.renderEmpty();
-    } else {
-      data.forEach((item, index) => {
-        const key = this.keyExtractor(item, index);
-        this._renderedItems.push(key);
-
-        const separators = {
-          highlight: () => this._highlightItem(key),
-          unhighlight: () => this._unhighlightItem(key)
-        };
-
-        const itemHtml = this.renderItem({ item, index, separators });
-        const separator = index < data.length - 1 ? this.renderSeparator() : '';
-
-        const wrapperStyle = this._getItemWrapperStyle(isGrid, numColumns, horizontal);
-
-        itemsHtml += `
-          <div class="flat-list-item-wrapper" data-key="${key}" data-index="${index}" style="${wrapperStyle}">
-            ${itemHtml}
-          </div>
-          ${separator}
-        `;
-      });
-    }
-
-    const scrollClasses = this._getScrollIndicatorClasses(horizontal);
-    const containerClass = [
-      'flat-list-container',
-      horizontal ? 'horizontal' : 'vertical',
-      isGrid ? 'grid' : '',
-      refreshing ? 'refreshing' : '',
-      ...scrollClasses
-    ].filter(Boolean).join(' ');
-
-    return `
-      <div class="flatlist flat-list-wrapper">
-        ${this.renderHeader()}
-
-        <div class="flatlist ${containerClass}" style="${this._getContainerStyle()}">
-          <div class="flat-list-content${horizontal ? ' horizontal-row' : ''}" style="${this._getContentStyle()}">
-            ${itemsHtml}
-          </div>
-          ${loading ? this.renderLoader() : ''}
-        </div>
-
-        ${this.renderFooter()}
-      </div>
-    `;
-  }
-
-  _highlightItem(key) {
-    const item = this._itemsRef.get(key);
-    if (item) item.classList.add('highlighted');
-  }
-
-  _unhighlightItem(key) {
-    const item = this._itemsRef.get(key);
-    if (item) item.classList.remove('highlighted');
-  }
-
-  _getItemWrapperStyle(isGrid, numColumns, horizontal) {
-    if (isGrid) return `flex: 0 0 calc(${100 / numColumns}% - 8px);`;
-    if (horizontal) {
-      const w = this.constructor.horizontalItemWidth;
-      if (w) return `flex: 0 0 ${w};`;
-      return 'flex: 0 0 auto;';
-    }
-    return '';
-  }
-
-  _getContainerStyle() {
-    const horizontal = this._isHorizontal();
-    if (horizontal) return 'overflow-x: auto; overflow-y: hidden;';
-    return 'overflow-y: auto; overflow-x: hidden;';
-  }
-
-  _getContentStyle() {
-    const numColumns = this._getNumColumns();
-    const horizontal = this._isHorizontal();
-    const isGrid = numColumns > 1 && !horizontal;
-
-    if (isGrid) return 'display: flex; flex-wrap: wrap; gap: 8px;';
-    if (horizontal) return 'display: flex; flex-direction: row; flex-wrap: nowrap; align-items: stretch; height: 100%; width: max-content; min-width: 100%;';
-    return '';
+    super.onDestroy();
   }
 
   styleSheet() {
@@ -532,37 +251,21 @@ export class FlatList extends SwitchComponent {
 
         .flat-list-container {
           flex: 1;
+          min-height: 0;
           position: relative;
         }
 
-        .flat-list-container.hide-scroll-v {
-          scrollbar-width: none;
-        }
-
-        .flat-list-container.hide-scroll-v::-webkit-scrollbar {
-          display: none;
-        }
-
+        .flat-list-container.hide-scroll-v,
         .flat-list-container.hide-scroll-h {
           scrollbar-width: none;
         }
-
+        .flat-list-container.hide-scroll-v::-webkit-scrollbar,
         .flat-list-container.hide-scroll-h::-webkit-scrollbar {
           display: none;
         }
 
-        .flat-list-container.vertical {
-          scroll-behavior: smooth;
-          -webkit-overflow-scrolling: touch;
-        }
-
-        .flat-list-container.horizontal {
-          scroll-behavior: smooth;
-          -webkit-overflow-scrolling: touch;
-        }
-
-        .flat-list-content.horizontal-row,
-        .flat-list-container.horizontal .flat-list-content {
+        .flat-list-content.layout-row,
+        .flat-list-container.orientation-horizontal .flat-list-content {
           display: flex;
           flex-direction: row;
           flex-wrap: nowrap;
@@ -573,9 +276,16 @@ export class FlatList extends SwitchComponent {
           height: auto;
         }
 
-        .flat-list-container.horizontal .flat-list-item-wrapper {
+        .flat-list-container.orientation-horizontal .flat-list-item-wrapper {
           flex-shrink: 0;
           box-sizing: border-box;
+        }
+
+        .flat-list-content.layout-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          justify-content: flex-start;
         }
 
         .flat-list-content {
@@ -603,38 +313,6 @@ export class FlatList extends SwitchComponent {
           justify-content: center;
         }
 
-        .loader-track {
-          width: 100%;
-          max-width: 200px;
-          height: 3px;
-          background: var(--surface-2, #e5e7eb);
-          border-radius: 2px;
-          overflow: hidden;
-          position: relative;
-        }
-
-        .loader-bar {
-          position: absolute;
-          left: 0;
-          top: 0;
-          height: 100%;
-          width: 40%;
-          background: linear-gradient(90deg,
-            var(--primary, #3b82f6) 0%,
-            var(--primary-light, #60a5fa) 50%,
-            var(--primary, #3b82f6) 100%
-          );
-          border-radius: 2px;
-          animation: slide-loader 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-        }
-
-        @keyframes slide-loader {
-          0% { transform: translateX(-100%); }
-          45% { transform: translateX(150%); animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
-          55% { transform: translateX(150%); animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
-          100% { transform: translateX(300%); }
-        }
-
         .flat-list-empty,
         .flat-list-error {
           padding: 32px;
@@ -642,20 +320,9 @@ export class FlatList extends SwitchComponent {
           color: var(--text-secondary, #6b7280);
         }
 
-        .flat-list-error {
+        .flat-list-error,
+        .flat-list-error-label {
           color: var(--error, #ef4444);
-        }
-
-        .flat-list-container.refreshing::before {
-          content: 'Refreshing...';
-          display: block;
-          padding: 16px;
-          text-align: center;
-          color: var(--text-secondary, #6b7280);
-        }
-
-        .flat-list-container.grid .flat-list-content {
-          justify-content: flex-start;
         }
       </style>
     `;

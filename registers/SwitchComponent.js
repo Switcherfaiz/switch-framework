@@ -26,6 +26,32 @@ function depsEqual(a, b) {
   return a.every((value, i) => Object.is(value, b[i]));
 }
 
+/**
+ * Run a lifecycle hook from base class → subclass so built-ins (Modal, FlatList)
+ * can use onMount/onUpdate/onDestroy without the subclass calling super.
+ */
+function callLifecycle(inst, name) {
+  const fns = [];
+  const seen = new Set();
+  let proto = Object.getPrototypeOf(inst);
+  while (proto && proto !== HTMLElement.prototype) {
+    const desc = Object.getOwnPropertyDescriptor(proto, name);
+    if (typeof desc?.value === 'function' && !seen.has(desc.value)) {
+      seen.add(desc.value);
+      fns.unshift(desc.value);
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  const cleanups = [];
+  for (const fn of fns) {
+    try {
+      const result = fn.call(inst);
+      if (Array.isArray(result)) cleanups.push(...result.filter((item) => typeof item === 'function'));
+    } catch (_) {}
+  }
+  return cleanups;
+}
+
 function subscribeDep(key, onChange) {
   try {
     return subscribeState(key, onChange, { immediate: false });
@@ -106,12 +132,8 @@ export class SwitchComponent extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (typeof this.onDestroy === 'function') {
-      try {
-        const result = this.onDestroy();
-        if (Array.isArray(result)) result.forEach((fn) => { if (typeof fn === 'function') fn(); });
-      } catch (_) {}
-    }
+    const destroyResult = callLifecycle(this, 'onDestroy');
+    destroyResult.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._destroyCallbacks.forEach((fn) => { if (typeof fn === 'function') fn(); });
     this._destroyCallbacks = [];
     this._teardownEffects();
@@ -146,7 +168,8 @@ export class SwitchComponent extends HTMLElement {
     _currentComponent = this;
     this._localStateIndex = 0;
     this._instanceSlotIndex = 0;
-    const html = typeof this.render === 'function' ? this.render() : '';
+    let html = typeof this.render === 'function' ? this.render() : '';
+    if (typeof this.wrapRender === 'function') html = this.wrapRender(html) ?? html;
     const styles = this._collectStyleSheets();
     this.shadowRoot.innerHTML = (styles || '') + (html || '');
     this._hasRendered = true;
@@ -156,10 +179,10 @@ export class SwitchComponent extends HTMLElement {
     try {
       if (typeof this.effects === 'function') this.effects();
       if (isFirstMount) {
-        if (typeof this.onMount === 'function') this.onMount();
+        callLifecycle(this, 'onMount');
         this._didMount = true;
-      } else if (typeof this.onUpdate === 'function') {
-        this.onUpdate();
+      } else {
+        callLifecycle(this, 'onUpdate');
       }
     } finally {
       _currentComponent = prev;
@@ -461,9 +484,9 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Create a static ref for imperative APIs (e.g. FlatList scroll methods).
+   * Create a static ref for imperative APIs (FlatList / ScrollView scroll + append).
    * @param {string} [propName='ref']
-   * @param {'flatlist'} [kind='flatlist']
+   * @param {'flatlist'|'scrollview'} [kind='flatlist']
    */
   static useRef(propName = 'ref', kind = 'flatlist') {
     return registerStaticRef(this, propName, createRef(kind));

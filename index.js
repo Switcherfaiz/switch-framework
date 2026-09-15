@@ -30,6 +30,9 @@ import { SwitchComponent, getCurrentComponent } from './registers/SwitchComponen
 import { TabLayout } from './registers/TabLayout.js';
 import { StackLayout } from './registers/StackLayout.js';
 import { FlatList } from './components/FlatList.js';
+import { ScrollView } from './components/ScrollView.js';
+import { Modal } from './components/Modal.js';
+import { syncOverlayBack } from './components/modalPortal.js';
 import { ElectronTitleBar } from './components/ElectronTitleBar.js';
 import {
   createState,
@@ -240,8 +243,10 @@ function onState(key, callback) {
   return slot.unsub;
 }
 
-function useRef(target) {
-  const ref = createRef('flatlist');
+function useRef(target, kind) {
+  const resolvedKind = kind
+    || (target?.constructor?.tag === 'sw-scroll-view' ? 'scrollview' : 'flatlist');
+  const ref = createRef(resolvedKind);
   const comp = target || getCurrentComponent();
   bindRefTarget(ref, comp);
   if (comp) {
@@ -259,6 +264,9 @@ export function registerFramework() {
   if (!customElements.get('sw-not-found-screen')) customElements.define('sw-not-found-screen', TwNotFoundScreen);
   if (!customElements.get('sw-splash-screen')) customElements.define('sw-splash-screen', TwSplashScreen);
   if (!customElements.get('sw-electron-titlebar')) customElements.define('sw-electron-titlebar', ElectronTitleBar);
+  if (!customElements.get('sw-scroll-view')) customElements.define('sw-scroll-view', ScrollView);
+  if (!customElements.get('sw-flat-list')) customElements.define('sw-flat-list', FlatList);
+  if (!customElements.get('sw-modal')) customElements.define('sw-modal', Modal);
 }
 
 export {
@@ -267,7 +275,10 @@ export {
   TabLayout,
   StackLayout,
   FlatList,
+  ScrollView,
+  Modal,
   ElectronTitleBar,
+  syncOverlayBack,
   // component/routing helpers
   Stack,
   Tabs,

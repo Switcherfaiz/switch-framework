@@ -36,7 +36,7 @@ export class TwAppShell extends HTMLElement {
   }
 
   getPopupsContainer() {
-    return this.shadowRoot.querySelector('#stack-contents');
+    return this.shadowRoot.querySelector('.popups, [data-popups], #stack-contents');
   }
 
   _syncTitleBars(layoutType = 'stack') {

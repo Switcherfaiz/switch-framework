@@ -1,4 +1,5 @@
 import { encodeData } from '../helpers/index.js';
+import { consumeModalBack } from '../components/modalPortal.js';
 
 export class Router {
   constructor(routes = {}, updateTitleCallback = null, containerEl = null, onRouteChange = null, options = {}) {
@@ -432,6 +433,7 @@ export class Router {
   }
 
   handlePopState(event) {
+    if (consumeModalBack(event)) return;
     if (this._lockedRoute) {
       const currentPath = window.location.pathname || '/';
       const currentRouting = currentPath.startsWith('/') ? currentPath.substring(1) : currentPath;
