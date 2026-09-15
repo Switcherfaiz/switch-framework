@@ -155,7 +155,7 @@ export class Modal extends SwitchComponent {
         root.classList.toggle(`presentation-${name}`, this._presentationStyle() === name);
       });
     }
-    if (backdrop) backdrop.classList.toggle('is-transparent', !this._isTransparent());
+    if (backdrop) backdrop.classList.toggle('is-transparent', this._isTransparent());
 
     this.style.pointerEvents = visible ? 'auto' : 'none';
     this.classList.toggle('is-open', visible);
@@ -188,9 +188,7 @@ export class Modal extends SwitchComponent {
     this._watchKeys();
     bindStaticRefs(this);
     bindInstanceRefs(this);
-    this.listener('[data-modal-backdrop]', 'click', (e) => {
-      if (e.target?.closest?.('[data-modal-backdrop]') === e.target) this.onRequestClose();
-    });
+    this.listener('[data-modal-backdrop]', 'click', () => this.onRequestClose());
     this._syncVisibleDOM();
     this.addOnDestroy(() => {
       document.removeEventListener('keydown', this._onKeyDown);
@@ -262,7 +260,9 @@ export class Modal extends SwitchComponent {
           display: flex;
           align-items: center;
           justify-content: center;
+          pointer-events: none;
         }
+        .modal-container > * { pointer-events: auto; }
 
         .modal-root.presentation-overFullScreen .modal-container,
         .modal-root.presentation-centered .modal-container {
