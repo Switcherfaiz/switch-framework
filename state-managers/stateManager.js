@@ -217,7 +217,20 @@ export class SwitchStateManager {
 
       dismiss() {
         ref._target?.dismiss?.();
-      }
+      },
+
+      minimize() { return call('minimize', []); },
+      maximize() { return call('maximize', []); },
+      restore() { return call('restore', []); },
+      toggleMaximize() { return call('toggleMaximize', []); },
+      close() { return call('close', []); },
+      refreshWindowState() { return call('refreshWindowState', []); },
+      getWindowState() { return call('getWindowState', []); },
+      show() { return call('show', []); },
+      hide() { return call('hide', []); },
+      setVisible(visible) { return call('setVisible', [visible]); },
+      getVisible() { return call('getVisible', []); },
+      toggleVisible() { return call('toggleVisible', []); }
     };
 
     return ref;

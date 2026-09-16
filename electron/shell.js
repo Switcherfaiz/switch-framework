@@ -76,13 +76,23 @@ export function electronTitleBarHtml(host = 'stack') {
   return `<${tag} data-host="${host}"></${tag}>`;
 }
 
+let titleBarTagOverride = '';
+
+/** Register a custom title bar tag (call at module load, before startApp). */
+export function setElectronTitleBarTag(tag) {
+  if (tag) titleBarTagOverride = String(tag);
+  if (typeof globalStates !== 'undefined' && globalStates.setState) {
+    globalStates.setState({ electronTitleBarTag: titleBarTagOverride });
+  }
+}
+
 /** Custom element tag for the title bar (`sw-electron-titlebar` by default). */
 export function getElectronTitleBarTag() {
   if (typeof globalStates !== 'undefined' && globalStates.getState) {
     const tag = globalStates.getState('electronTitleBarTag');
     if (tag) return tag;
   }
-  return 'sw-electron-titlebar';
+  return titleBarTagOverride || 'sw-electron-titlebar';
 }
 
 /**

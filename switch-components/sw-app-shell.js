@@ -91,7 +91,8 @@ export class TwAppShell extends HTMLElement {
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
         * { box-sizing: border-box; font-family: inherit; }
-        sw-electron-titlebar {
+        [data-host="tabs"],
+        [data-host="stack"] {
           position: fixed;
           top: 0;
           left: 0;

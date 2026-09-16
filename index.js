@@ -34,6 +34,7 @@ import { ScrollView } from './components/ScrollView.js';
 import { Modal } from './components/Modal.js';
 import { syncOverlayBack } from './components/modalPortal.js';
 import { ElectronTitleBar } from './components/ElectronTitleBar.js';
+import { setElectronTitleBarTag, getElectronTitleBarTag } from './electron/shell.js';
 import {
   createState,
   ensureState,
@@ -256,6 +257,8 @@ function useRef(target, kind) {
   return ref;
 }
 
+export const VERSION = '0.2.9';
+
 export function registerFramework() {
   if (!customElements.get('sw-app-initial')) customElements.define('sw-app-initial', TwAppInitial);
   if (!customElements.get('sw-tabs-shell')) customElements.define('sw-tabs-shell', TwTabsShell);
@@ -278,6 +281,8 @@ export {
   ScrollView,
   Modal,
   ElectronTitleBar,
+  setElectronTitleBarTag,
+  getElectronTitleBarTag,
   syncOverlayBack,
   // component/routing helpers
   Stack,
