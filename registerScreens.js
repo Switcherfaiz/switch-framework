@@ -38,6 +38,7 @@ export function assertExpoConventions({ tabsLayout, stackScreens, tabScreens }) 
  */
 export function ensureComponentDefined(Cls) {
   if (!Cls?.tag || typeof Cls !== 'function') return;
+  if (typeof customElements === 'undefined') return;
   const existing = customElements.get(Cls.tag);
   if (!existing) {
     customElements.define(Cls.tag, Cls);

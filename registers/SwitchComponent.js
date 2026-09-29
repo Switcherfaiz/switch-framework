@@ -26,6 +26,16 @@ function depsEqual(a, b) {
   return a.every((value, i) => Object.is(value, b[i]));
 }
 
+function propsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
  * Run a lifecycle hook from base class → subclass so built-ins (Modal, FlatList)
  * can use onMount/onUpdate/onDestroy without the subclass calling super.
@@ -93,6 +103,7 @@ export class SwitchComponent extends HTMLElement {
     this._hasRendered = false;
     this._propsRaw = undefined;
     this._propsCache = null;
+    this._strippingDataAttr = false;
     // React-style local state slots (useState hook)
     this._localSlots = [];
     this._localStateIndex = 0;
@@ -119,16 +130,41 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Reacts to encoded props changes: when the data attribute is replaced
-   * after the first render, the component re-renders with the new props.
-   * The attribute itself is never removed or cleared by the framework.
-   * Fires only after the initial mount (guarded by _hasRendered) so the
-   * upgrade-time attribute setting does not cause a double render.
+   * Parent still writes `data="${createProps(...)}"`.
+   * Copy onto the instance, paint once, then remove `data` so Inspect stays clean.
+   * Stripping must not remount — that dropped image load listeners and doubled work.
+   * A new `data` value after mount is a real props update and does re-render.
    */
   attributeChangedCallback(name, oldValue, newValue) {
-    if (name !== 'data' || oldValue === newValue) return;
-    if (!this._hasRendered) return;
-    this._runRenderAndMount();
+    if (name !== 'data' || this._strippingDataAttr) return;
+    if (oldValue === newValue) return;
+    if (newValue == null || newValue === '') return;
+    const changed = this._ingestDataAttribute(newValue);
+    if (changed && this._didMount && !this._isRendering) {
+      this._runRenderAndMount();
+      return;
+    }
+    if (this._hasRendered) this._stripDataAttribute();
+  }
+
+  _ingestDataAttribute(raw) {
+    if (raw == null || raw === '') return false;
+    const encoded = String(raw);
+    const next = decodeData(encoded) ?? {};
+    const same = encoded === this._propsRaw || propsEqual(this._propsCache, next);
+    this._propsRaw = encoded;
+    this._propsCache = next;
+    return !same;
+  }
+
+  _stripDataAttribute() {
+    if (!this.hasAttribute('data')) return;
+    this._strippingDataAttr = true;
+    try {
+      this.removeAttribute('data');
+    } finally {
+      this._strippingDataAttr = false;
+    }
   }
 
   disconnectedCallback() {
@@ -160,6 +196,7 @@ export class SwitchComponent extends HTMLElement {
 
   _runRenderAndMount() {
     if (!this.shadowRoot) return;
+    if (this.hasAttribute('data')) this._ingestDataAttribute(this.getAttribute('data'));
     const isFirstMount = !this._didMount;
     this._isRendering = true;
     // Set _currentComponent BEFORE render() so hooks (useState, useShared, onState)
@@ -168,15 +205,16 @@ export class SwitchComponent extends HTMLElement {
     _currentComponent = this;
     this._localStateIndex = 0;
     this._instanceSlotIndex = 0;
-    let html = typeof this.render === 'function' ? this.render() : '';
-    if (typeof this.wrapRender === 'function') html = this.wrapRender(html) ?? html;
-    const styles = this._collectStyleSheets();
-    this.shadowRoot.innerHTML = (styles || '') + (html || '');
-    this._hasRendered = true;
-    adoptGlobalComponentSheet(this.shadowRoot);
-    // _currentComponent is already this; effects() and onMount() can also call hooks.
     this._effectHookIndex = 0;
     try {
+      let html = typeof this.render === 'function' ? this.render() : '';
+      if (typeof this.wrapRender === 'function') html = this.wrapRender(html) ?? html;
+      const styles = this._collectStyleSheets();
+      this.shadowRoot.innerHTML = (styles || '') + (html || '');
+      this._hasRendered = true;
+      adoptGlobalComponentSheet(this.shadowRoot);
+      // _currentComponent is already this; effects() and onMount() can also call hooks.
+      this._effectHookIndex = 0;
       if (typeof this.effects === 'function') this.effects();
       if (isFirstMount) {
         callLifecycle(this, 'onMount');
@@ -184,10 +222,13 @@ export class SwitchComponent extends HTMLElement {
       } else {
         callLifecycle(this, 'onUpdate');
       }
+    } catch (err) {
+      console.error(`[switch-framework] ${this.constructor?.name || this.tagName} render failed:`, err);
     } finally {
       _currentComponent = prev;
       this._isRendering = false;
       this._flushQueuedEffects();
+      this._stripDataAttribute();
     }
   }
 
@@ -384,19 +425,13 @@ export class SwitchComponent extends HTMLElement {
   }
 
   /**
-   * Decode this component's props from its data attribute (set by the parent
-   * with createProps). Read-only: the data attribute is never removed or
-   * modified, so the DOM always shows the props each instance received.
-   * Returns {} when no data attribute is set or the payload is malformed.
-   * The decoded object is cached per attribute value, so calling this in
-   * render(), onMount() and event handlers costs nothing extra.
+   * Decoded props for this instance. Parent still writes `data="${createProps(...)}"`.
+   * After the first paint the attribute is removed; getProps() reads the instance copy.
    * @returns {object} decoded props
    */
   getProps() {
-    const raw = this.getAttribute('data');
-    if (raw !== this._propsRaw) {
-      this._propsRaw = raw;
-      this._propsCache = decodeData(raw);
+    if (this.hasAttribute('data')) {
+      this._ingestDataAttribute(this.getAttribute('data'));
     }
     return this._propsCache ?? {};
   }

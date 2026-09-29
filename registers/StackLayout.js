@@ -1,60 +1,45 @@
-import { SwitchComponent } from './SwitchComponent.js';
-import { registerScreens, ensureComponentDefined } from '../registerScreens.js';
+import { LayoutNavigator } from './LayoutNavigator.js';
+import { ensureComponentDefined, assertExpoConventions } from '../registerScreens.js';
+import { flattenLayoutTree, buildLayoutIndex, getLayoutChildren } from './layoutTree.js';
 import { startApp, hasAppStarted } from './index.js';
 import { initTheme } from '../themes/index.js';
 
-export class StackLayout extends SwitchComponent {
+export class StackLayout extends LayoutNavigator {
   static tag = 'sw-stack-layout';
+  static screens = [];
   static stackScreens = [];
   static tabsLayout = null;
   static splash = 'sw-starter-splash';
+  static initialScreen = '';
   static initialRoute = 'index';
 
-  // Instance versions (satisfy SwitchComponent/HTMLElement contract)
-  render() { return ''; }
-  styleSheet() { return ''; }
-
-  // Static versions — called by app-shell directly on the class.
-  // Override these as static in your subclass.
   static render() { return ''; }
   static styleSheet() { return ''; }
-  
-
-  getContentContainer() {
-    
-    return this.shadowRoot?.querySelector('#content') ?? null;
-  }
 
   static getLayoutConfig() {
     return {
       name: this.tag || 'sw-stack-layout',
+      screenName: this.screenName || '',
       layout: 'stack',
-      stackrender:this.render(),
-      stackstyleSheet:this.styleSheet()
+      initialScreen: this.initialScreen || this.initialRoute || '',
+      stackrender: this.render(),
+      stackstyleSheet: this.styleSheet()
     };
   }
 
-  /**
-   * Boot the whole app from the layout class. Called automatically by the
-   * framework when index.html includes <sw-app-initial> and loads app/_layout.js.
-   * Manual use is only needed for custom entry setups.
-   *
-   * @param {Function|string} [registers] - optional registers hook (same as startApp's second arg)
-   */
   static startApp(registers) {
     initTheme();
     return startApp(this.getAppLayout(), registers);
   }
 
-  /** Find the user's StackLayout subclass exported from a layout module. */
   static findLayoutClass(mod) {
     if (!mod || mod.default != null) return null;
-    return Object.values(mod).find(
-      (v) => typeof v === 'function' && v !== StackLayout && v.prototype instanceof StackLayout
-    ) || null;
+    const values = Object.values(mod).filter((v) => typeof v === 'function');
+    const root = values.find((v) => v?.isRootLayout && v.prototype instanceof StackLayout);
+    if (root) return root;
+    return values.find((v) => v !== StackLayout && !v.isRootLayout && v.prototype instanceof StackLayout) || null;
   }
 
-  /** Resolve the layout module URL from index.html script tags. */
   static findLayoutModuleUrl() {
     if (typeof document === 'undefined') return '/app/_layout.js';
     const scripts = [...document.querySelectorAll('script[type="module"][src]')];
@@ -62,7 +47,6 @@ export class StackLayout extends SwitchComponent {
     return match?.src || '/app/_layout.js';
   }
 
-  /** Auto-start the app when <sw-app-initial> is present and a StackLayout subclass exists. */
   static async autoBootFromPage() {
     if (hasAppStarted()) return;
     if (typeof document === 'undefined') return;
@@ -94,40 +78,53 @@ export class StackLayout extends SwitchComponent {
   static _autoBootScheduled = false;
 
   static getAppLayout(validate = true) {
-
     ensureComponentDefined(this);
-    const tabsLayout = this.tabsLayout;
-    const tabScreens = Array.isArray(tabsLayout?.screens)
-      ? tabsLayout.screens
-      : (tabsLayout?.getLayoutConfig?.()?.screens ?? []);
+    const tree = flattenLayoutTree(this);
+    const layoutIndex = buildLayoutIndex(tree.layouts);
+    const screens = tree.leaves;
+    const tabsNode = tree.layouts.find((n) => n.kind === 'tabs');
+    const resolvedTabsLayout = tabsNode?.Cls
+      ? {
+          ...tabsNode.Cls.getLayoutConfig(),
+          name: tabsNode.tag,
+          screens: getLayoutChildren(tabsNode.Cls)
+        }
+      : null;
 
-
-    const { screens, tabsLayout: resolvedTabsLayout } = registerScreens({
-      stackScreens: this.stackScreens || [],
-      tabsLayout,
-      tabScreens,
-      validate
-    });
+    if (validate) {
+      assertExpoConventions({
+        tabsLayout: resolvedTabsLayout,
+        stackScreens: screens.filter((s) => s.layout !== 'tabs'),
+        tabScreens: screens.filter((s) => s.layout === 'tabs')
+      });
+    }
 
     const initFn = this.init;
-    const stackLayoutConfig = this.getLayoutConfig
-      ? this.getLayoutConfig()
-      : { name: this.tag || 'sw-stack-layout', layout: 'stack' };
+    const stackLayoutConfig = this.getLayoutConfig();
+    const initialScreen = this.initialScreen || this.initialRoute || 'index';
 
     return {
-      //initialize and put configs globally for components to access them and resolving them
       splash: this.splash || 'sw-starter-splash',
-      initialRoute: this.initialRoute || 'index',
+      initialRoute: initialScreen,
       screens,
+      layoutIndex,
+      layoutNodes: tree.layouts,
       async init(api) {
         const result = typeof initFn === 'function' ? await initFn.call(this, api) : {};
-        if (resolvedTabsLayout && api?.globalStates) {
-          api.globalStates.setState({ tabsLayout: resolvedTabsLayout });
-        }
         if (api?.globalStates) {
-          api.globalStates.setState({ stackLayout: stackLayoutConfig });
+          if (resolvedTabsLayout) api.globalStates.setState({ tabsLayout: resolvedTabsLayout });
+          api.globalStates.setState({
+            stackLayout: stackLayoutConfig,
+            layoutIndex,
+            layoutNodes: tree.layouts
+          });
         }
-        return { ...result, screens, initialRoute: result?.initialRoute ?? this.initialRoute };
+        return {
+          ...result,
+          screens,
+          layoutIndex,
+          initialRoute: result?.initialRoute ?? result?.initialScreen ?? initialScreen
+        };
       }
     };
   }

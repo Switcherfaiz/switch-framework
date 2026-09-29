@@ -137,6 +137,16 @@ export function replace(route, params = {}) {
   console.warn('Replace function not available in globalStates');
 }
 
+export function reset(route, params = {}) {
+  if (typeof globalStates !== 'undefined' && globalStates.getState) {
+    const resetFn = globalStates.getState('reset');
+    if (typeof resetFn === 'function') {
+      return resetFn(route, params);
+    }
+  }
+  console.warn('Reset function not available in globalStates');
+}
+
 /** Returns array of defined route paths from registered screens */
 export function getDefinedRoutes() {
   if (typeof globalStates !== 'undefined' && globalStates.getState) {

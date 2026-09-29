@@ -4,35 +4,28 @@ export class TwAppShell extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-    this._layoutInjected = false;
-    this.stackrender;
-    this.stackstyleSheet;
+    this.stackrender = '';
+    this.stackstyleSheet = '';
+    this._rootTag = '';
   }
 
   connectedCallback() {
-    const { stackrender, stackstyleSheet } = globalStates.getState('stackLayout');
-    this.stackrender = stackrender || '';
-    this.stackstyleSheet = stackstyleSheet || '';
+    const stack = globalStates?.getState ? (globalStates.getState('stackLayout') || {}) : {};
+    this.stackrender = stack.stackrender || '';
+    this.stackstyleSheet = stack.stackstyleSheet || '';
+    this._rootTag = stack.name || stack.tag || '';
     this.render();
-    this.setLayout('stack');
+    this._syncTitleBars('stack');
+  }
+
+  getRootLayoutElement() {
+    return this.shadowRoot?.querySelector('[data-sw-root-layout]') ?? null;
   }
 
   getContentContainer() {
-    const activeLayout = globalStates?.getState ? globalStates.getState('activeLayout') : null;
-    if (activeLayout === 'tabs') return this.getTabsContainer();
-    return this.getStackContainer();
-  }
-
-  getStackContainer() {
-    const stackShell = this.shadowRoot.querySelector('sw-stack-shell');
-    if (!stackShell) return null;
-    return stackShell.getContentContainer ? stackShell.getContentContainer() : null;
-  }
-
-  getTabsContainer() {
-    const tabsShell = this.shadowRoot.querySelector('sw-tabs-shell');
-    if (!tabsShell) return null;
-    return tabsShell.getContentContainer ? tabsShell.getContentContainer() : null;
+    const root = this.getRootLayoutElement();
+    if (root?.getContentContainer) return root.getContentContainer();
+    return this.shadowRoot?.getElementById('root-host') ?? null;
   }
 
   getPopupsContainer() {
@@ -47,46 +40,32 @@ export class TwAppShell extends HTMLElement {
   }
 
   setLayout(layoutType = 'stack') {
-    const tabsShell = this.shadowRoot.querySelector('sw-tabs-shell');
-    const stackShell = this.shadowRoot.querySelector('sw-stack-shell');
-
-    if (tabsShell) tabsShell.style.display = layoutType === 'tabs' ? 'block' : 'none';
-    if (stackShell) {
-      stackShell.style.display = layoutType === 'tabs' ? 'none' : 'block';
-      stackShell.style.pointerEvents = layoutType === 'tabs' ? 'none' : 'auto';
-    }
-
-    const layoutContent = this.shadowRoot.getElementById('layout-content');
-    if (layoutContent) {
-      layoutContent.style.display = layoutType === 'tabs' ? 'none' : 'block';
-    }
-
     this._syncTitleBars(layoutType);
   }
 
   render() {
     const titleBarTag = getElectronTitleBarTag();
+    const rootTag = this._rootTag;
 
     this.shadowRoot.innerHTML = `
       ${this.styleSheet()}
       <${titleBarTag} data-host="tabs"></${titleBarTag}>
       <${titleBarTag} data-host="stack"></${titleBarTag}>
-      <sw-tabs-shell style="display:none"></sw-tabs-shell>
-      <sw-stack-shell></sw-stack-shell>
+      <div id="root-host">${rootTag ? `<${rootTag} data-sw-root-layout></${rootTag}>` : ''}</div>
       <div class="stack-contents" id="stack-contents">${this.stackrender}</div>
     `;
   }
 
   styleSheet() {
-    var userCss = this.stackstyleSheet.replace('<style>', '');
-    userCss = userCss.replace('</style>', '');
-    userCss = userCss.trim();
+    let userCss = String(this.stackstyleSheet || '');
+    userCss = userCss.replace('<style>', '').replace('</style>', '').trim();
     return `
       <style>
         ${userCss}
         :host {
           display: block;
           width: 100%;
+          height: 100%;
           min-height: 100dvh;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         }
@@ -98,6 +77,17 @@ export class TwAppShell extends HTMLElement {
           left: 0;
           right: 0;
           z-index: 10001;
+        }
+        #root-host {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          min-height: 100dvh;
+        }
+        #root-host > * {
+          display: block;
+          width: 100%;
+          height: 100%;
         }
         .stack-contents {
           position: fixed;

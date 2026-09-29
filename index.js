@@ -18,6 +18,7 @@ import {
   goBack,
   redirect,
   replace,
+  reset,
   reload,
   getActiveRoute,
   isScreenActive,
@@ -29,6 +30,7 @@ import { createProps } from './helpers/index.js';
 import { SwitchComponent, getCurrentComponent } from './registers/SwitchComponent.js';
 import { TabLayout } from './registers/TabLayout.js';
 import { StackLayout } from './registers/StackLayout.js';
+import { RootLayout } from './registers/RootLayout.js';
 import { FlatList } from './components/FlatList.js';
 import { ScrollView } from './components/ScrollView.js';
 import { Modal } from './components/Modal.js';
@@ -257,7 +259,7 @@ function useRef(target, kind) {
   return ref;
 }
 
-export const VERSION = '0.2.9';
+export const VERSION = '0.3.0';
 
 export function registerFramework() {
   if (!customElements.get('sw-app-initial')) customElements.define('sw-app-initial', TwAppInitial);
@@ -277,6 +279,7 @@ export {
   SwitchComponent,
   TabLayout,
   StackLayout,
+  RootLayout,
   FlatList,
   ScrollView,
   Modal,
@@ -299,6 +302,7 @@ export {
   goBack,
   redirect,
   replace,
+  reset,
   reload,
   getActiveRoute,
   isScreenActive,

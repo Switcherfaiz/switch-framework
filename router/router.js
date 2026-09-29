@@ -1,5 +1,6 @@
 import { encodeData } from '../helpers/index.js';
 import { consumeModalBack } from '../components/modalPortal.js';
+import { resolveInitialLeafName } from '../registers/layoutTree.js';
 
 export class Router {
   constructor(routes = {}, updateTitleCallback = null, containerEl = null, onRouteChange = null, options = {}) {
@@ -9,14 +10,18 @@ export class Router {
     this.onRouteChange = onRouteChange;
     this.defaultRoute = options.defaultRoute ?? null;
     this.titlePrefix = options.titlePrefix ?? '';
+    this.layoutIndex = options.layoutIndex instanceof Map ? options.layoutIndex : new Map();
     this.navigate = this.navigate.bind(this);
     this.redirect = this.redirect.bind(this);
     this.replace = this.replace.bind(this);
+    this.reset = this.reset.bind(this);
     this.handlePopState = this.handlePopState.bind(this);
     this.renderScreen = this.renderScreen.bind(this);
     this.findRoute = this.findRoute.bind(this);
     this.buildPath = this.buildPath.bind(this);
     this.start = this.start.bind(this);
+    this.resolveNavigateTarget = this.resolveNavigateTarget.bind(this);
+    this.ensureLayoutChain = this.ensureLayoutChain.bind(this);
 
     this._lockedRoute = null;
     // Cache of rendered screen elements: key = normalizedRoute, value = { element, params }
@@ -32,6 +37,35 @@ export class Router {
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;');
+  }
+
+  resolveNavigateTarget(routeName) {
+    if (routeName == null || routeName === '') return routeName;
+    const normalized = String(routeName).startsWith('/') ? String(routeName).substring(1) : String(routeName);
+    if (this.findRoute(normalized, {})) return normalized;
+    const node = this.layoutIndex.get(normalized);
+    if (node?.Cls) {
+      const leaf = resolveInitialLeafName(node.Cls);
+      if (leaf) return leaf;
+    }
+    return normalized;
+  }
+
+  ensureLayoutChain(routeInfo, rootEl) {
+    const chain = routeInfo?.route?.layoutChain || [];
+    const nested = chain.length > 1 ? chain.slice(1) : [];
+    let container = rootEl?.getContentContainer?.() || this.containerEl;
+    if (!nested.length) return container;
+
+    for (const node of nested) {
+      if (!container || !node?.tag) break;
+      const cacheKey = `layout:${node.screenName || node.tag}`;
+      this._showScreen(container, cacheKey, `<${node.tag}></${node.tag}>`);
+      const cached = this._screenCache.get(cacheKey);
+      const el = cached?.element;
+      container = (el && typeof el.getContentContainer === 'function' && el.getContentContainer()) || container;
+    }
+    return container;
   }
 
   getNotFoundRouteKey() {
@@ -91,7 +125,8 @@ export class Router {
     const fullPath = window.location.pathname || '/';
     const routingPath = fullPath.startsWith('/') ? fullPath.substring(1) : fullPath;
     if (routingPath) {
-      const info = this.renderScreen(routingPath, {});
+      const target = this.resolveNavigateTarget(routingPath);
+      const info = this.renderScreen(target, {});
       if (!info) return this.renderNotFound(routingPath, {});
 
       if (info.fullPath && info.fullPath !== fullPath) {
@@ -101,7 +136,7 @@ export class Router {
       return info;
     }
 
-    const targetRoute = initialRoute ?? this.defaultRoute;
+    const targetRoute = this.resolveNavigateTarget(initialRoute ?? this.defaultRoute);
     if (targetRoute) return this.navigate(targetRoute);
     return this.renderNotFound('', {});
   }
@@ -273,7 +308,8 @@ export class Router {
       '-webkit-overflow-scrolling:touch',
       'overscroll-behavior:contain',
       'box-sizing:border-box',
-      'padding-bottom:var(--sw-screen-pad-bottom, 0px)'
+      'padding-bottom:var(--sw-screen-pad-bottom, 0px)',
+      'background:var(--white_background, var(--sw-screen-bg, #fff))'
     ].join(';');
   }
 
@@ -283,6 +319,8 @@ export class Router {
     slot.setAttribute('data-sw-active', 'false');
     slot.setAttribute('aria-hidden', 'true');
     slot.inert = true;
+    // display:none so nested visibility:visible (tab screens) cannot paint through
+    slot.style.display = 'none';
     slot.style.visibility = 'hidden';
     slot.style.pointerEvents = 'none';
     slot.style.zIndex = '0';
@@ -293,6 +331,7 @@ export class Router {
     slot.setAttribute('data-sw-active', 'true');
     slot.removeAttribute('aria-hidden');
     slot.inert = false;
+    slot.style.display = 'block';
     slot.style.visibility = 'visible';
     slot.style.pointerEvents = 'auto';
     slot.style.zIndex = '1';
@@ -316,8 +355,13 @@ export class Router {
       this._showScreenSlot(cached.slot, cached);
       const el = cached.element;
       cached.params = params;
-      if (!options.reuseParams && el?.setAttribute && el.hasAttribute('data') && typeof encodeData === 'function') {
-        try { el.setAttribute('data', encodeData(params)); } catch (_) {}
+      if (!options.reuseParams && el && typeof encodeData === 'function') {
+        const usesProps = el.hasAttribute?.('data')
+          || el._propsRaw !== undefined
+          || el.constructor?.props === 'encoded';
+        if (usesProps) {
+          try { el.setAttribute('data', encodeData(params)); } catch (_) {}
+        }
       }
       return el;
     }
@@ -385,7 +429,7 @@ export class Router {
   }
 
   navigate(fullRoute, additionalProps = {}) {
-    const normalized = fullRoute.startsWith('/') ? fullRoute.substring(1) : fullRoute;
+    const normalized = this.resolveNavigateTarget(fullRoute);
     const route = this.findRoute(normalized, additionalProps);
     if (!route) return this.renderNotFound(normalized, additionalProps);
 
@@ -407,7 +451,7 @@ export class Router {
   }
 
   replace(fullRoute, additionalProps = {}) {
-    const normalized = fullRoute.startsWith('/') ? fullRoute.substring(1) : fullRoute;
+    const normalized = this.resolveNavigateTarget(fullRoute);
     const route = this.findRoute(normalized, additionalProps);
     if (!route) return this.renderNotFound(normalized, additionalProps);
 
@@ -447,17 +491,37 @@ export class Router {
     const fullPath = window.location.pathname;
     const routingPath = fullPath.startsWith('/') ? fullPath.substring(1) : fullPath;
     if (routingPath) {
-      const info = this.renderScreen(routingPath, (event.state && event.state.params) ? event.state.params : {});
+      const target = this.resolveNavigateTarget(routingPath);
+      const info = this.renderScreen(target, (event.state && event.state.params) ? event.state.params : {});
       if (!info) return this.renderNotFound(routingPath, {});
       return info;
     }
-    const targetRoute = this.defaultRoute;
+    const targetRoute = this.resolveNavigateTarget(this.defaultRoute);
     if (targetRoute) return this.navigate(targetRoute, {});
     return this.renderNotFound('', {});
   }
 
   go_back() {
     window.history.back();
+  }
+
+  /**
+   * Drop cached screen/layout instances so they remount on the next visit.
+   * Omit route (or pass '*') to clear everything.
+   */
+  reset(route, params = {}) {
+    if (route == null || route === '' || route === '*') {
+      this.clearScreenCache();
+      return null;
+    }
+    const normalized = String(route).startsWith('/') ? String(route).substring(1) : String(route);
+    this.clearScreenCache(normalized);
+    this.clearScreenCache(`layout:${normalized}`);
+    const rec = this.routes[normalized];
+    if (rec?.cacheKey) this.clearScreenCache(rec.cacheKey);
+    const target = this.resolveNavigateTarget(normalized);
+    if (this.findRoute(target, params)) return this.replace(target, params);
+    return null;
   }
 
   /**

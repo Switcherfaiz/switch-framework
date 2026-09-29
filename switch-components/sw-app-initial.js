@@ -74,6 +74,7 @@ export class TwAppInitial extends HTMLElement {
           title,
           layout,
           cacheKey: screen.cacheKey || '',
+          layoutChain: screen.layoutChain || [],
           render: (props = {}) => {
             if (typeof screen.render === 'function') return screen.render(props, api);
             if (!tag) return '';
@@ -92,6 +93,7 @@ export class TwAppInitial extends HTMLElement {
     const routeKeys = Object.keys(routes);
     const initialRoute = layoutResult?.initialRoute || this.layout?.initialRoute || (routeKeys.length ? routeKeys[0] : null);
     const titlePrefix = layoutResult?.titlePrefix ?? this.layout?.titlePrefix ?? this.layout?.appName ?? '';
+    const layoutIndex = layoutResult?.layoutIndex || this.layout?.layoutIndex || new Map();
 
     if (!this._preventAutoHideSplash && !this._splashRemoved) {
       this.removeSplashscreen();
@@ -109,7 +111,6 @@ export class TwAppInitial extends HTMLElement {
       null,
       appContainer,
       (routeInfo) => {
-        const layoutType = routeInfo?.route?.layout || 'stack';
         const params = routeInfo?.params || {};
         const routeParams = Object.fromEntries(
           Object.entries(params).filter(([k]) => !k.startsWith('_') && !k.startsWith('__'))
@@ -121,6 +122,11 @@ export class TwAppInitial extends HTMLElement {
         const newHistory = existingIdx >= 0
           ? prevHistory.slice(0, existingIdx + 1)
           : [...prevHistory, historyEntry];
+
+        const chain = routeInfo?.route?.layoutChain || [];
+        const layoutType = chain.some((n) => n.kind === 'tabs') || routeInfo?.route?.layout === 'tabs'
+          ? 'tabs'
+          : 'stack';
 
         this.globalStates.setState({
           activePath: routeInfo.fullPath,
@@ -140,14 +146,9 @@ export class TwAppInitial extends HTMLElement {
 
         const currentShell = this.shadowRoot.querySelector('sw-app-shell');
         if (currentShell?.setLayout) currentShell.setLayout(layoutType);
-
-        if (layoutType === 'tabs') {
-          return currentShell?.getTabsContainer ? currentShell.getTabsContainer() : null;
-        }
-
-        return currentShell?.getStackContainer ? currentShell.getStackContainer() : null;
+        return this.router.ensureLayoutChain(routeInfo, currentShell?.getRootLayoutElement?.());
       },
-      { defaultRoute: initialRoute, titlePrefix }
+      { defaultRoute: initialRoute, titlePrefix, layoutIndex }
     );
 
     api.router = this.router;
@@ -160,6 +161,7 @@ export class TwAppInitial extends HTMLElement {
       redirect: this.router.redirect,
       replace: this.router.replace,
       go_back: this.router.go_back,
+      reset: this.router.reset.bind(this.router),
       defaultRoute: initialRoute,
       definedRoutes
     });
