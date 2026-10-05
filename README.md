@@ -4,18 +4,12 @@
 
 # switch-framework
 
-Status: Under maintenance. Documentation is not ready yet.
+Switch Framework is a no-build frontend runtime for **web** and **Electron** apps. Screens, layouts, state, and custom elements run as native ESM with `switch-framework-backend`.
 
-switch-framework is a frontend framework designed to work together with `switch-framework-backend` to build:
-
-- Web apps
-- Electron desktop apps
-
-The goal is a runtime-first workflow where apps can run without a traditional build step (no bundler required for the basic setup), and the framework is served and executed at runtime.
-
-## Install
+**Documentation:** [switch-framework-docs](https://github.com/Switcherfaiz/switch-framework-docs)
 
 ```bash
+npx create-switch-framework-app my-app
 npm i switch-framework
 ```
 
