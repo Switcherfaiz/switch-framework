@@ -4,9 +4,10 @@ import { TwAppShell } from './switch-components/sw-app-shell.js';
 import { TwStackShell } from './switch-components/sw-stack-shell.js';
 import { TwNotFoundScreen } from './switch-components/sw-not-found-screen.js';
 import { TwSplashScreen } from './switch-components/sw-splash-screen.js';
-import './switch-components/sw-redirect.js';
 import { setGlobalComponentSheet, getGlobalComponentSheet, adoptGlobalComponentSheet } from './switch-components/globalStyles/index.js';
 import { assertExpoConventions, registerScreens, ensureComponentDefined, registerComponents } from './registerScreens.js';
+import { reportError, installOverlay, clearErrors, getErrorQueue, isOverlayEnabled } from './overlay/index.js';
+import { registerFramework } from './registerFramework.js';
 import {
   Stack,
   Tabs,
@@ -19,18 +20,21 @@ import {
   redirect,
   replace,
   reset,
+  wipeTo,
   reload,
   getActiveRoute,
   isScreenActive,
   isScreenInstanceActive,
   useScreenFocus,
-  useParams
+  useParams,
+  Link,
+  Redirect,
+  RootLayout,
+  TabLayout,
+  StackLayout
 } from './router/index.js';
 import { createProps } from './helpers/index.js';
 import { SwitchComponent, getCurrentComponent } from './registers/SwitchComponent.js';
-import { TabLayout } from './registers/TabLayout.js';
-import { StackLayout } from './registers/StackLayout.js';
-import { RootLayout } from './registers/RootLayout.js';
 import { FlatList } from './components/FlatList.js';
 import { ScrollView } from './components/ScrollView.js';
 import { Modal } from './components/Modal.js';
@@ -49,8 +53,9 @@ import {
   createRef,
   bindRefTarget
 } from './state-managers/index.js';
-export { startApp } from './registers/index.js';
+export { startApp } from './router/index.js';
 export { ensureComponentDefined as registerComponent } from './registerScreens.js';
+export { reportError, installOverlay, clearErrors, getErrorQueue, isOverlayEnabled };
 
 const useEffect = (function createUseEffect() {
   return function useEffect(callback, deps = []) {
@@ -261,18 +266,7 @@ function useRef(target, kind) {
 
 export const VERSION = '0.3.0';
 
-export function registerFramework() {
-  if (!customElements.get('sw-app-initial')) customElements.define('sw-app-initial', TwAppInitial);
-  if (!customElements.get('sw-tabs-shell')) customElements.define('sw-tabs-shell', TwTabsShell);
-  if (!customElements.get('sw-stack-shell')) customElements.define('sw-stack-shell', TwStackShell);
-  if (!customElements.get('sw-app-shell')) customElements.define('sw-app-shell', TwAppShell);
-  if (!customElements.get('sw-not-found-screen')) customElements.define('sw-not-found-screen', TwNotFoundScreen);
-  if (!customElements.get('sw-splash-screen')) customElements.define('sw-splash-screen', TwSplashScreen);
-  if (!customElements.get('sw-electron-titlebar')) customElements.define('sw-electron-titlebar', ElectronTitleBar);
-  if (!customElements.get('sw-scroll-view')) customElements.define('sw-scroll-view', ScrollView);
-  if (!customElements.get('sw-flat-list')) customElements.define('sw-flat-list', FlatList);
-  if (!customElements.get('sw-modal')) customElements.define('sw-modal', Modal);
-}
+export { registerFramework };
 
 export {
   // base classes
@@ -303,12 +297,15 @@ export {
   redirect,
   replace,
   reset,
+  wipeTo,
   reload,
   getActiveRoute,
   isScreenActive,
   isScreenInstanceActive,
   useScreenFocus,
   useParams,
+  Link,
+  Redirect,
   // state management
   createState,
   ensureState,

@@ -57,8 +57,10 @@ export class TwStackShell extends HTMLElement {
           height: 100dvh;
           overflow: hidden;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          -webkit-tap-highlight-color: transparent;
+          tap-highlight-color: transparent;
         }
-        * { box-sizing: border-box; font-family: inherit; }
+        * { box-sizing: border-box; font-family: inherit; -webkit-tap-highlight-color: transparent; tap-highlight-color: transparent; }
         #content {
           position: relative;
           background: transparent;

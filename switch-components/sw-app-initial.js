@@ -75,6 +75,10 @@ export class TwAppInitial extends HTMLElement {
           layout,
           cacheKey: screen.cacheKey || '',
           layoutChain: screen.layoutChain || [],
+          Cls: screen.Cls || null,
+          guard: screen.Cls?.guard,
+          redirect: screen.Cls?.redirect,
+          protected: screen.Cls?.protected,
           render: (props = {}) => {
             if (typeof screen.render === 'function') return screen.render(props, api);
             if (!tag) return '';
@@ -162,6 +166,7 @@ export class TwAppInitial extends HTMLElement {
       replace: this.router.replace,
       go_back: this.router.go_back,
       reset: this.router.reset.bind(this.router),
+      wipeTo: this.router.wipeTo,
       defaultRoute: initialRoute,
       definedRoutes
     });
@@ -207,8 +212,8 @@ export class TwAppInitial extends HTMLElement {
   styleSheet() {
     return `
       <style>
-        :host{position:absolute;inset:0;display:flex;flex-direction:column;width:100%;height:100dvh;overflow:auto;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font-family:inherit}
-        *{box-sizing:border-box;font-family:inherit;padding:0;margin:0}
+        :host{position:absolute;inset:0;display:flex;flex-direction:column;width:100%;height:100dvh;overflow:auto;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font-family:inherit;-webkit-tap-highlight-color:transparent;tap-highlight-color:transparent}
+        *{box-sizing:border-box;font-family:inherit;padding:0;margin:0;-webkit-tap-highlight-color:transparent;tap-highlight-color:transparent}
       </style>
     `;
   }

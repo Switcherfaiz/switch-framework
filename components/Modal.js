@@ -248,9 +248,10 @@ export class Modal extends SwitchComponent {
           position: absolute;
           inset: 0;
           background: rgba(9, 9, 11, 0.45);
+          -webkit-backdrop-filter: blur(8px);
           backdrop-filter: blur(8px);
         }
-        .modal-backdrop.is-transparent { background: transparent; backdrop-filter: none; }
+        .modal-backdrop.is-transparent { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 
         .modal-container {
           position: relative;

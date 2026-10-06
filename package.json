@@ -10,7 +10,8 @@
     ".": "./index.js",
     "./index.js": "./index.js",
     "./router": "./router/index.js",
-    "./themes": "./themes/index.js"
+    "./themes": "./themes/index.js",
+    "./overlay": "./overlay/index.js"
   },
   "files": [
     "**/*.js",

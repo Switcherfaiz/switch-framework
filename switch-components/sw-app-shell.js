@@ -68,8 +68,10 @@ export class TwAppShell extends HTMLElement {
           height: 100%;
           min-height: 100dvh;
           font-family: "Poppins", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          -webkit-tap-highlight-color: transparent;
+          tap-highlight-color: transparent;
         }
-        * { box-sizing: border-box; font-family: inherit; }
+        * { box-sizing: border-box; font-family: inherit; -webkit-tap-highlight-color: transparent; tap-highlight-color: transparent; }
         [data-host="tabs"],
         [data-host="stack"] {
           position: fixed;

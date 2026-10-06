@@ -2,7 +2,9 @@ import { subscribeState } from '../state-managers/index.js';
 import { registerStaticState, getStatesForSymbol } from '../staticStateRegistry.js';
 import { createRef, registerStaticRef } from '../state-managers/index.js';
 import { adoptGlobalComponentSheet } from '../switch-components/globalStyles/index.js';
+import { TAP_HIGHLIGHT_CSS } from '../helpers/tapHighlight.js';
 import { decodeData } from '../helpers/codecs/codec.js';
+import { reportError } from '../overlay/index.js';
 
 /**
  * SwitchComponent – base class for screens and components.
@@ -223,7 +225,12 @@ export class SwitchComponent extends HTMLElement {
         callLifecycle(this, 'onUpdate');
       }
     } catch (err) {
-      console.error(`[switch-framework] ${this.constructor?.name || this.tagName} render failed:`, err);
+      reportError(err, {
+        title: 'Render failed',
+        component: this.constructor?.name || this.tagName,
+        tag: this.constructor?.tag || this.tagName,
+        screenName: this.constructor?.screenName || ''
+      });
     } finally {
       _currentComponent = prev;
       this._isRendering = false;
@@ -250,7 +257,7 @@ export class SwitchComponent extends HTMLElement {
 
     for (const C of constructors) {
       const fn = C.prototype.styleSheet;
-      if (typeof fn !== 'function' || fn === SwitchComponent.prototype.styleSheet) continue;
+      if (typeof fn !== 'function') continue;
       if (seen.has(fn)) continue;
       seen.add(fn);
       const raw = this._processStyleSheet(fn.call(this));
@@ -508,7 +515,7 @@ export class SwitchComponent extends HTMLElement {
   }
 
   styleSheet() {
-    return '';
+    return TAP_HIGHLIGHT_CSS;
   }
 
   static useState(identifier) {
